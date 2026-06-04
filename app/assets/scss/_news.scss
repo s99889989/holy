@@ -1,0 +1,104 @@
+@use "mixin" as *;
+@use "sass:color";
+.news-date {
+  font-size: 20px;
+  color: #44271a;
+  margin-bottom: 10px;
+  @include mobile {
+    font-size: 12px;
+    margin-bottom: 3px;
+  }
+}
+
+.img-frame {
+  background: url(../images/news/news-photoFrame.png);
+  padding: 17px;
+  @include mobile{
+    padding: 5px;
+  }
+}
+
+.news-title {
+  word-wrap:break-word;
+  font-size: 28px;
+  color: #2ab381;
+  @include mobile {
+    font-size: 18px;
+  }
+}
+
+.news-divider {
+  height: 6px;
+  background-color: #FFED8B;
+  @include mobile {
+    height: 3px;
+  }
+}
+
+.news-title-ellipsis {
+  color: #2ab381;
+  white-space: nowrap;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  @include mobile {
+    color: #2ab381;
+  }
+  .active {
+    color: #f5a21b;
+  }
+  a {
+    color: #2ab381;
+    &:hover {
+      color: #f5a21b;
+      text-decoration: none;
+    }
+    @include mobile {
+      color: #2ab381;
+      &:hover {
+        color: #f5a21b;
+        text-decoration: none;
+      }
+    }
+  }
+}
+
+.news-summary-ellipsis {
+  font-size: 22px;
+  display: block; // 如果不是區塊元素的話，要加這一行
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4; // N 填入要顯示的行數
+  @include mobile {
+    font-size: 18px;
+  }
+}
+
+.more-button>a {
+  font-size: 22px;
+  text-align: center;
+  background-color: #bfe8d9;
+  color: #44271a;
+  border: none;
+  padding: 5px 20px;
+  border-radius: 25px;
+  transition-duration: 0.2s;
+  &:hover {
+    background-color: color.adjust(#bfe8d9, $lightness: -10%);
+    text-decoration: none;
+  }
+  @include mobile {
+    font-size: 16px;
+    padding: 5px 10px;
+    border-radius: 10px;
+  }
+}
+
+.artical-content > p {
+  word-wrap: break-word;
+}
+
+.news-summary-ellipsis > p {
+  word-wrap: break-word;
+}

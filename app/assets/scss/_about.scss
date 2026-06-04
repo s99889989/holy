@@ -1,0 +1,88 @@
+@use "mixin" as *;
+.purpose-arrow {
+    position: absolute;
+    left: 50%;
+    transform: scale(0.7) translate(-70%,-60%);
+    @include pad {
+        transform: scale(0.7) translate(-70%,-60%);
+    }
+    @include mobile {
+        transform: scale(0.4) translate(-120%,-110%);
+    }
+}
+
+.about-button-bg {
+    text-align: center;
+    font-size: 22px;
+    color: #fff;
+    background: #F8BE5D;
+    width: 300px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-radius: 10px;
+    @include pad {
+        font-size: 20px;
+        width: 250px;
+    }
+    @include mobile {
+        font-size: 18px;
+        width: 200px;
+    }
+}
+
+.about-button {
+    display: inline-block;
+    text-align: center;
+    font-size: 22px;
+    color: #fff;
+    background: #F8BE5D;
+    width: 200px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-radius: 10px;
+    margin-right: 10px;
+    margin-left: 10px;
+    @include pad {
+        font-size: 16px;
+        width: 200px;
+        margin-right: 5px;
+        margin-left: 5px;
+        margin-bottom: 10px;
+    }
+    @include mobile {
+        font-size: 14px;
+        width: 120px;
+        margin-right: 5px;
+        margin-left: 5px;
+        margin-bottom: 10px;
+    }
+}
+
+.third-header {
+    font-size: 22px;
+    color:#0068b7;
+    line-height: 30px;
+    letter-spacing: 1px;
+    @include pad {
+        font-size: 20px;
+        line-height: 30px;
+    }
+}
+
+.partner-text {
+    font-size: 18px;
+    color: #44271a;
+    line-height: 25px;
+    @include pad {
+        font-size: 18px;
+    }
+}
+
+.partner-info {
+    font-size: 18px;
+    color: #393939;
+    line-height: 25px;
+    @include pad {
+        font-size: 16px;
+    }
+}

@@ -1,0 +1,72 @@
+@use "mixin" as *;
+// cover
+.hp-cover-photo {
+    background-size: cover;
+    width: 100vw;
+    // height: 100vh;
+    height: auto;
+    top: 0;
+    left: 0;
+    // transform: scale(1.5);
+    // animation: showHpCover 1s ease-out alternate forwards;
+    @include pad {
+      top: 80px;
+    }
+    @include mobile {
+      top: 80px;
+    }
+  }
+
+  // @keyframes showHpCover {
+  //   from {
+  //     opacity: 0;
+  //     transform: scale(1.5)
+  //   }
+  //   to {
+  //     opacity: 1;
+  //     transform: scale(1)
+  //   }
+  // }
+
+  // @keyframes showCover {
+  //   from {
+  //     opacity: 0;
+  //   }
+  //   to {
+  //     opacity: 1;
+  //   }
+  // }
+
+
+  .cover-box {
+    position: relative;
+  }
+
+  .cover-title {
+    opacity: 1;
+    width: 9%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -54%);
+    z-index: 400;
+    @include pad {
+      top: 67%;
+    }
+    @include mobile {
+      top: 65%;
+      width: 20%;
+    }
+  }
+
+
+  // @keyframes showTitle {
+  //   from {
+  //     opacity: 0;
+  //     transform: translate(-50%, -70%)
+  //   }
+  //   to {
+  //     opacity: 1;
+  //     transform: translate(-50%, -54%)
+  //   }
+  // }

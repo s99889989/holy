@@ -1,0 +1,474 @@
+@use "mixin" as *;
+@use "ebootstrap" as *;
+@use "bar" as *;
+@use "navbar" as *;
+@use "cover" as *;
+@use "homepage" as *;
+@use "about" as *;
+@use "swiper" as *;
+@use "cusslide" as *;
+@use "news" as *;
+
+$font-size: 22px;
+$line-height: 40px;
+
+* {
+  font-size: $font-size;
+  line-height: 30px;
+  text-align: justify;/*讓文字齊行*/
+  text-justify: distribute;/*讓文字左右齊行*/
+  color: #44271a;
+  font-weight: 100;
+  letter-spacing: 1px;
+  font-family: 'Noto Sans TC', sans-serif;
+  box-sizing: border-box;
+  @include pad {
+    font-size: 18px;
+    line-height: 35px;
+  }
+  @include mobile {
+    font-size: 18px;
+    line-height: 30px;
+  }
+}
+
+html {
+  overflow-x: hidden !important;
+  box-sizing: border-box;
+  @include pad {
+    overflow-x: hidden !important;
+    box-sizing: border-box;
+  }
+  @include mobile {
+    overflow-x: hidden !important;
+    box-sizing: border-box;
+  }
+}
+
+#breadcrumb {
+  @include mobile {
+    color: #2a1001;
+    font-size: 15px;
+  }
+  a {
+    color: #2a1001;
+    @include mobile {
+      font-size: 15px;
+    }
+  }
+}
+
+.overflow {
+  overflow-x: hidden !important;
+  box-sizing: border-box;
+  @include pad {
+    overflow-x: hidden !important;
+    box-sizing: border-box;
+  }
+  @include mobile {
+    overflow-x: hidden !important;
+    box-sizing: border-box;
+  }
+}
+
+a {
+  text-decoration: none;
+  &:hover {
+    text-decoration: none;
+  }
+}
+
+.fixedPosition {
+  //  position: fixed;
+  overflow: hidden;
+}
+
+.bg-greenweb {
+  background: url(../images/global/bg-greenweb.png) repeat;
+}
+
+.por {
+  position: relative;
+}
+
+.poa {
+  position: absolute;
+}
+
+body {
+  background-image: url(../images/global/bg-body.jpg);
+}
+
+.section {
+  padding-top: 100px;
+  margin-top: -100px;
+  @include mobile {
+    padding-top: 80px;
+    margin-top: -80px;
+  }
+}
+
+.highlight {
+  color: #10BF95;
+}
+
+.nopadding {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+html {
+    @include desktop() {
+        scroll-behavior: smooth;
+    }
+}
+
+// content
+.sub-nav {
+    font-size: $font-size * 1.2;
+    color: #2ab381;
+    font-weight: 500;
+    @include mobile {
+        font-size: 14pt;
+        color: #2ab381;
+        line-height: 0px;
+    }
+    .active {
+      color: #f5a21b;
+    }
+    a {
+        font-size: $font-size * 1.2;
+        color: #2ab381;
+        &:hover {
+            color: #f5a21b;
+            text-decoration: none;
+        }
+        @include mobile {
+            font-size: 14pt;
+            color: #2ab381;
+            &:hover {
+                color: #f5a21b;
+                text-decoration: none;
+            }
+        }
+    }
+  }
+
+.header {
+display: inline-block;
+  color: #2ab831;
+  font-size: $font-size * 1.4;
+  @include mobile {
+    font-size: $font-size * 1;
+  }
+}
+
+.sub-header {
+  vertical-align: middle;
+  display: inline-block;
+  color: #2ab381 !important;
+  font-size: 28px;
+  margin-top: 50px;
+  margin-bottom: 15px;
+  @include mobile {
+    font-size: 20px;
+    margin-top: 30px;
+    margin-bottom: 15px;
+  }
+}
+
+.circle {
+  display: inline-block;
+  vertical-align: middle;
+  width: 28px;
+  height: 28px;
+  border: 6px solid #2ab381 !important;
+  border-radius: 50%;
+  margin-right:10px;
+  margin-top: 50px;
+  margin-bottom: 15px;
+  @include mobile {
+    width: 20px;
+    height: 20px;
+    border: 4px solid #2ab381 !important;
+    margin-top: 30px;
+    margin-bottom: 15px;
+  }
+}
+
+// footer
+.footer-fontSize {
+    font-size: 18px;
+    @include mobile {
+        font-size: 12px;
+        line-height: 0.9rem;
+    }
+  }
+
+.footer-address {
+  @include mobile {
+    padding-left: 10px;
+    font-size: 14px;
+    line-height: 0.7rem;
+    font-weight: 500;
+  }
+}
+
+.footer-grass {
+  @include mobile {
+    transform: scale(0.4) translate(100px, -60px);
+  }
+}
+
+// product
+.cus-card {
+  border: 1px solid #57D2B5;
+  border-top: 5px solid #57D2B5;
+}
+
+.card-text {
+  font-size: 24px;
+}
+
+.arrow-right {
+  position: absolute;
+  right: 10px;
+  transform: translateY(50%)
+}
+
+// Prod
+.prod-color {
+  color: #A56371;
+}
+
+.prod-dotted-line {
+  border-bottom: 3px dotted #ccc;
+  padding-top: 8px;
+  margin-bottom: 8px;
+}
+
+.price-color {
+  color: #cb4800;
+}
+
+.card-text {
+  @include pad {
+    font-size: 18px;
+  }
+  @include mobile {
+    font-size: 18px;
+  }
+}
+
+// access
+.target {
+  display: inline-block;
+  transform: scale(0.6) translateY(-10px);
+  @include mobile {
+    transform: scale(0.4) translateY(-6px);
+  }
+}
+
+.cus-button>a {
+  text-align: center;
+  background-color: #34caa8;
+  color: #fff;
+  font-size: 26px;
+  border: none;
+  padding: 10px 30px;
+  border-radius: 30px;
+  transition-duration: 0.2s;
+  @include mobile {
+    font-size: 20px;
+  }
+  &:hover {
+    background-color: #f8be5f;
+    color: #fff;
+    text-decoration: none;
+  }
+}
+
+.cus-prod-button>a {
+  text-align: center;
+  background-color: #eb5280;
+  color: #fff;
+  font-size: $font-size * 1;
+  border: none;
+  padding: 10px 40px;
+  border-radius: 30px;
+  transition-duration: 0.2s;
+  @include mobile {
+    font-size: $font-size * 0.7;
+  }
+  &:hover {
+    background-color: #f8be5f;
+    color: #fff;
+    text-decoration: none;
+  }
+}
+
+#myBtn {
+  @include pad {
+    display: none;
+    position: fixed;
+    bottom: 10px;
+    right: 15px;
+    z-index: 900;
+    border: none;
+    outline: none;
+    background-color:#333;
+    opacity: 0.25;
+    cursor: pointer;
+    padding: 10px;
+    border-radius: 100%;
+    transition: 0.5s;
+  }
+  i {
+    font-size: 50px;
+    color: white;
+    @include mobile {
+        font-size: 30px;
+        color: white;
+      }
+  }
+  @include mobile {
+    display: none;
+    position: fixed;
+    bottom: 10px;
+    right: 15px;
+    z-index: 900;
+    border: none;
+    outline: none;
+    background-color:#333;
+    opacity: 0.25;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 100%;
+    transition: 0.5s;
+  }
+  i {
+    font-size: 40px;
+    color: white;
+    @include mobile {
+        font-size: 20px;
+        color: white;
+        border: 10px solid transparent;
+        background-clip: padding-box;
+      }
+  }
+}
+
+#myBtn:hover {
+    opacity: 1;
+}
+
+// carousel
+.carousel-indicators li {
+  width: 20px;
+  height: 20px;
+  margin-left: 20px;
+  border-radius: 50%;
+  transform: translateY(50%);
+  @include mobile {
+    width: 10px;
+    height: 10px;
+  }
+}
+
+.carousel2 li {
+  list-style-type: none;
+  float:left;
+  cursor: pointer;
+  padding: 3px;
+}
+
+#carousel {
+  position: relative;
+  height: 300px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+#carousel div {
+  position: absolute;
+  transition: transform 1s, left 1s, opacity 1s, z-index 0s;
+  opacity: 1;
+}
+#carousel div img {
+  width: 300px;
+  transition: width 1s;
+}
+#carousel div.hideLeft {
+  left: 0%;
+  opacity: 0;
+  transform: translateY(50%) translateX(-50%);
+}
+#carousel div.hideLeft img {
+  cursor: pointer;
+  width: 150px;
+}
+#carousel div.hideRight {
+  left: 100%;
+  opacity: 0;
+  transform: translateY(50%) translateX(-50%);
+}
+#carousel div.hideRight img {
+  cursor: pointer;
+  width: 150px;
+}
+#carousel div.prev {
+  z-index: 5;
+  left: 30%;
+  transform: translateY(50px) translateX(-50%);
+}
+#carousel div.prev img {
+  cursor: pointer;
+  width: 200px;
+}
+#carousel div.prevLeftSecond {
+  z-index: 4;
+  left: 15%;
+  transform: translateY(50%) translateX(-50%);
+  opacity: 0.7;
+}
+#carousel div.prevLeftSecond img {
+  cursor: pointer;
+  width: 150px;
+}
+#carousel div.selected {
+  cursor: pointer;
+  z-index: 10;
+  left: 50%;
+  transform: translateY(0px) translateX(-50%);
+}
+#carousel div.next {
+  z-index: 5;
+  left: 70%;
+  transform: translateY(50px) translateX(-50%);
+}
+#carousel div.next img {
+  cursor: pointer;
+  width: 200px;
+}
+#carousel div.nextRightSecond {
+  z-index: 4;
+  left: 85%;
+  transform: translateY(50%) translateX(-50%);
+  opacity: 0.7;
+}
+#carousel div.nextRightSecond img {
+  cursor: pointer;
+  width: 150px;
+}
+
+.buttons {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 10px;
+}
+
+.access-info-text {
+  @include mobile {
+    font-size: 16px;
+  }
+}

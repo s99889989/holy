@@ -1,0 +1,55 @@
+@use "mixin" as *;
+.bar-straight-dotted {
+    background: url(../images/homepage/healthfarm_hp_footerline.png) repeat-y;
+  }
+
+  .bar-black-dashed {
+    background: url(../images/global/bar-black-dashed.png) repeat;
+    height: 1px;
+  }
+
+  .bar-waterDrop {
+    background: url(../images/homepage/healthfarm_hp_footer_waterdrop.png) repeat;
+    height: 13px;
+    @include mobile() {
+      background-size: 0.9;
+    }
+  }
+
+  .bar-green {
+    top: -17px;
+    left: 120px;
+    background: url(../images/global/bar-green2.png) center center scroll repeat;
+    height: 17px;
+    width: calc(100% - 240px);
+    filter: hue-rotate(88deg) brightness(70%);
+    &:before {
+      height: 17px;
+      width: 120px;
+      content: '';
+      background: url(../images/global/bar-green1.png) center center scroll repeat;
+      position: absolute;
+      left: -120px
+    }
+    &:after {
+      height: 17px;
+      width: 120px;
+      content: '';
+      background: url(../images/global/bar-green3.png) center center scroll repeat;
+      position: absolute;
+      right: -120px
+    }
+  }
+
+  .bar-green-center {
+    top: 17px;
+    left: 50%;
+    position: relative;
+    transform: translateX(-50%);
+  }
+
+  .bar-green-center2 {
+    left: 50%;
+    position: relative;
+    transform: translateX(-50%);
+  }

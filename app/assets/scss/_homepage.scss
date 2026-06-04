@@ -1,0 +1,895 @@
+@use "mixin" as *;
+// cover slide
+.desktop-cover-mask {
+  mask-image: url(../images/homepage/healthfarm_hp_topphoto_mask.png);
+  mask-size: 100vw;
+  // mask-mode: alpha;
+}
+
+.cover-slider {
+  margin-top: 100px;
+  @include pad {
+    margin-top: 80px;
+  }
+  @include mobile {
+    margin-top: 80px;
+  }
+}
+
+.homepage-cover img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  filter: alpha(opacity=0);
+  -webkit-animation: round 20s linear infinite;
+  animation: round 20s linear infinite;
+}
+
+// .homepage-cover img:nth-child(5) {
+//   -webkit-animation-delay: 0s;
+//           animation-delay: 0s;
+// }
+
+.homepage-cover img:nth-child(4) {
+  -webkit-animation-delay: 0s;
+          animation-delay: 0s;
+}
+
+.homepage-cover img:nth-child(3) {
+  -webkit-animation-delay: 5s;
+          animation-delay: 5s;
+}
+
+.homepage-cover img:nth-child(2) {
+  -webkit-animation-delay: 10s;
+          animation-delay: 10s;
+}
+
+.homepage-cover img:nth-child(1) {
+  -webkit-animation-delay: 15s;
+          animation-delay: 15s;
+}
+
+@-webkit-keyframes round {
+  5% {
+      opacity: 1;
+      filter: alpha(opacity=100);
+      /* 0 - 1秒 淡入*/
+  }
+  25% {
+      opacity: 1;
+      filter: alpha(opacity=100);
+      /* 1- 5秒靜止*/
+  }
+  30% {
+      opacity: 0;
+      filter: alpha(opacity=0);
+      /* 5-6秒淡出*/
+  }
+}
+@keyframes round {
+  5% {
+      opacity: 1;
+      filter: alpha(opacity=100);
+      /* 0 - 1秒 淡入*/
+  }
+  25% {
+      opacity: 1;
+      filter: alpha(opacity=100);
+      /* 1- 5秒靜止*/
+  }
+  30% {
+      opacity: 0;
+      filter: alpha(opacity=0);
+      /* 5-6秒淡出*/
+  }
+}
+
+// #Introduction
+.intro-title {
+  @include mobile {
+    transform: scale(0.6);
+  }
+}
+
+.intro-text {
+  line-height: 40px;
+  @include mobile {
+    line-height: 30px;
+    font-size: 15px;
+  }
+}
+
+.mob-cover {
+  @include pad {
+    padding-top: 80px;
+  }
+  @include mobile {
+    padding-top: 80px;
+  }
+}
+
+.homepage-restaurant-p {
+  font-size: 18px;
+  line-height: 25px;
+  @include mobile {
+    font-size: 14px;
+    line-height: 20px;
+    // padding: -15px;
+  }
+}
+
+// Homepage
+.prod-text {
+  font-size: 22px;
+  @include mobile {
+    font-size: 14px;
+    white-space:nowrap;
+  }
+}
+
+.hp-links-bg {
+  background: url(../images/homepage/healthfarm_hp_link_gradual_bg.png) repeat-x;
+}
+
+.hp-note-bg {
+  background: url(../images/homepage/healthfarm_desktop_hp_link_bg.png);
+  background-size: 100% auto;
+  @include mobile {
+    background: url(../images/homepage/healthfarm_mobile_hp_link_bg.png) repeat-x;
+    background-size: 100% auto;
+  }
+}
+
+.links-cover {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -40%);
+  @include pad {
+    transform: translate(-50%, -55%) scale(0.8);
+  }
+  @include mobile {
+    transform: translate(-50%, -65%) scale(0.7);
+  }
+}
+
+.links-text {
+  padding-top: 10px;
+  @include mobile {
+    font-size: 14px;
+    white-space:nowrap;
+    line-height: 10px;
+  }
+}
+
+.hp-restaurant-bg {
+  transform: translateY(-13px);
+  @include pad {
+    transform: translateY(-16px);
+  }
+  @include mobile {
+    transform: translateY(-17px);
+  }
+}
+
+// #News
+.ill-flowsers-reverse {
+  transform:scaleX(-1) translate(40%, -25%) scale(0.7);
+  position: absolute;
+  @include mobile {
+    transform:scaleX(-1) translate(50%, -40%) scale(0.4);
+  }
+}
+
+.ill-flowsers {
+  right: 0;
+  transform: scale(0.7) translate(60%, -35%) ;
+  position: absolute;
+  @include mobile {
+    transform: translate(50%, -40%) scale(0.4);
+  }
+}
+
+.news-tape {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.7);
+  @include pad {
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  @include mobile {
+  transform: translate(-50%, -50%) scale(0.3);
+  }
+}
+
+.news-date {
+  font-size: 12px;
+}
+
+.news-people {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.news-talk1 {
+  position: absolute;
+  right: 0;
+  animation:talk1 1.3s ease-in-out infinite alternate;
+}
+
+.news-talk2 {
+  position: absolute;
+  right: 0;
+  animation: talk2 1.3s ease-in-out infinite alternate;
+}
+
+@keyframes talk1 {
+  from {
+    transform: translate(-120%, -380%) rotate(2deg);
+  }
+  to {
+    transform: translate(-120%, -380%) rotate(-2deg);
+  }
+}
+
+@keyframes talk2 {
+  from {
+    transform: translate(50%, -250%) rotate(2deg);
+  }
+  to {
+    transform: translate(50%, -250%) rotate(-2deg);
+  }
+}
+
+
+// Desktop -  Features
+
+.cycle-top-mask {
+  position: absolute;
+  width: 231px;
+  height: 231px;
+  border-radius: 50%;
+  overflow: hidden;
+  transform: translate(15%, -70%);
+}
+
+.cycle-bottom-mask {
+  position: absolute;
+  width: 231px;
+  height: 231px;
+  border-radius: 50%;
+  overflow: hidden;
+  transform: translate(15%, -40%);
+}
+
+.cycle-title-top {
+  position: absolute;
+  transform: translate(30%, -400%) scale(0.8);
+}
+
+.cycle-title-bottom {
+  position: absolute;
+  transform: translate(30%, -270%) scale(0.8);
+}
+
+
+.cycle-top {
+  position: absolute;
+  transition: all 1s ease-out;
+  transform: translate(-15%, -15%) scale(0.7);
+  &:hover {
+    transform: translate(-15%, -15%) scale(0.9);
+  }
+}
+
+.cycle-bottom {
+  position: absolute;
+  transition: all 1s ease-out;
+  transform: translate(-15%, -15%) scale(0.7);
+  &:hover {
+    transform: translate(-15%, -15%) scale(0.9);
+  }
+}
+
+
+.cycle-grass-top {
+  position: absolute;
+  transform: translate(-12%, -62%) scale(0.7);
+}
+
+.cycle-grass-bottom {
+  position: absolute;
+  transform: translate(-12%, -44%) scale(0.7);
+}
+
+
+
+@keyframes cycle-hover {
+  from {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.hp-cover {
+  transform: scale(1.8);
+}
+
+.sun {
+  position: absolute;
+  top: 70px;
+  right: 30px;
+  z-index: 1200;
+  animation: sun 4s linear infinite;
+  @include mobile {
+    top: 30px;
+    right: -20px;
+    transform: scale(0.4);
+    animation: mob-sun 4s linear infinite;
+  }
+}
+
+@-moz-keyframes sun {
+  40% { right: 40px; top: 60px;}
+}
+@-webkit-keyframes sun {
+  40% { right: 40px; top: 60px;}
+}
+@-o-keyframes sun {
+  40% { right: 40px; top: 60px;}
+}
+@-ms-keyframes sun {
+  40% { right: 40px; top: 60px;}
+}
+@keyframes sun {
+  40% { right: 40px; top: 60px;}
+}
+
+@-moz-keyframes mob-sun {
+  40% { right: -10px; top: 40px;}
+}
+@-webkit-keyframes mob-sun {
+  40% { right: -10px; top: 40px;}
+}
+@-o-keyframes mob-sun {
+  40% { right: -10px; top: 40px;}
+}
+@-ms-keyframes mob-sun {
+  40% { right: -10px; top: 40px;}
+}
+@keyframes mob-sun {
+  40% { right: -10px; top: 40px;}
+}
+
+.hp-cloud1 {
+  position: absolute;
+  top: 0px;
+  left: 150px;
+  animation: cloud1 4s linear infinite;
+  @include pad {
+    top: 10px;
+    left: -30px;
+    animation: pad-cloud1 4s linear infinite;
+  }
+  @include mobile {
+    top: 130px;
+    left: -30px;
+    transform: scale(0.5);
+    animation: mob-cloud1 4s linear infinite;
+  }
+}
+
+@-moz-keyframes cloud1 {
+  40% { top: -10px; left: 140px;}
+}
+@-webkit-keyframes cloud1 {
+  40% { top: -10px; left: 140px;}
+}
+@-o-keyframes cloud1 {
+  40% { top: -10px; left: 140px;}
+}
+@-ms-keyframes cloud1 {
+  40% { top: -10px; left: 140px;}
+}
+@keyframes cloud1 {
+  40% { top: -10px; left: 140px;}
+}
+
+@-moz-keyframes pad-cloud1 {
+  40% { top: 20px; left: -20px;}
+}
+@-webkit-keyframes pad-cloud1 {
+  40% { top: 20px; left: -20px;}
+}
+@-o-keyframes pad-cloud1 {
+  40% { top: 20px; left: -20px;}
+}
+@-ms-keyframes pad-cloud1 {
+  40% { top: 20px; left: -20px;}
+}
+@keyframes pad-cloud1 {
+  40% { top: 20px; left: -20px;}
+}
+
+@-moz-keyframes mob-cloud1 {
+  40% { top: 120px; left: -20px;}
+}
+@-webkit-keyframes mob-cloud1 {
+  40% { top: 120px; left: -20px;}
+}
+@-o-keyframes mob-cloud1 {
+  40% { top: 120px; left: -20px;}
+}
+@-ms-keyframes mob-cloud1 {
+  40% { top: 120px; left: -20px;}
+}
+@keyframes mob-cloud1 {
+  40% { top: 120px; left: -20px;}
+}
+
+.hp-cloud2 {
+  position: absolute;
+  top: -80px;
+  right: 250px;
+  animation: cloud2 4s linear infinite;
+  @include mobile {
+    transform: scale(0.4);
+    top: -70px;
+    right: 160px;
+    animation: mob-cloud2 4s linear infinite;
+  }
+}
+
+@-moz-keyframes cloud2 {
+  40% { top: -70px; right: 240px;}
+}
+@-webkit-keyframes cloud2 {
+  40% { top: -70px; right: 240px;}
+}
+@-o-keyframes cloud2 {
+  40% { top: -70px; right: 240px;}
+}
+@-ms-keyframes cloud2 {
+  40% { top: -70px; right: 240px;}
+}
+@keyframes cloud2 {
+  40% { top: -70px; right: 240px;}
+}
+
+@-moz-keyframes mob-cloud2 {
+  40% { top: -60px; right: 170px;}
+}
+@-webkit-keyframes mob-cloud2 {
+  40% { top: -60px; right: 170px;}
+}
+@-o-keyframes mob-cloud2 {
+  40% { top: -60px; right: 170px;}
+}
+@-ms-keyframes mob-cloud2 {
+  40% { top: -60px; right: 170px;}
+}
+@keyframes mob-cloud2 {
+  40% { top: -60px; right: 170px;}
+}
+
+.hp-cloud3 {
+  position: absolute;
+  right: 50px;
+  top: 50px;
+  animation: cloud3 4s linear infinite;
+  @include pad {
+    right: 0px;
+    top: 50px;
+    animation: pad-cloud3 4s linear infinite;
+  }
+  @include mobile {
+    top: 30px;
+    right: -10px;
+    transform: scale(0.4);
+    animation: mob-cloud3 4s linear infinite;
+  }
+}
+
+@-moz-keyframes cloud3 {
+  40% { top: 40px; right: 60px;}
+}
+@-webkit-keyframes cloud3 {
+  40% { top: 40px; right: 60px;}
+}
+@-o-keyframes cloud3 {
+  40% { top: 40px; right: 60px;}
+}
+@-ms-keyframes cloud3 {
+  40% { top: 40px; right: 60px;}
+}
+@keyframes cloud3 {
+  40% { top: 40px; right: 60px;}
+}
+
+@-moz-keyframes pad-cloud3 {
+  40% { top: 40px; right: 10px;}
+}
+@-webkit-keyframes pad-cloud3 {
+  40% { top: 40px; right: 10px;}
+}
+@-o-keyframes pad-cloud3 {
+  40% { top: 40px; right: 10px;}
+}
+@-ms-keyframes pad-cloud3 {
+  40% { top: 40px; right: 10px;}
+}
+@keyframes pad-cloud3 {
+  40% { top: 40px; right: 10px;}
+}
+
+@-moz-keyframes mob-cloud3 {
+  40% { top: 20px; right: 0px;}
+}
+@-webkit-keyframes mob-cloud3 {
+  40% { top: 20px; right: 0px;}
+}
+@-o-keyframes mob-cloud3 {
+  40% { top: 20px; right: 0px;}
+}
+@-ms-keyframes mob-cloud3 {
+  40% { top: 20px; right: 0px;}
+}
+@keyframes mob-cloud3 {
+  40% { top: 20px; right: 0px;}
+}
+
+.mob-four {
+  @include pad {
+    transform: translateY(-30%);
+  }
+  @include mobile {
+    transform: translateY(-50%);
+  }
+}
+
+.mob-four2 {
+  @include pad {
+    transform: translateY(-30%);
+  }
+  @include mobile {
+    transform: translateY(-30%);
+  }
+}
+
+// news
+.bg-news {
+  background: url(../images/homepage/healthfarm_hp_news_bgphoto.png) center bottom no-repeat;
+}
+
+.news-photo {
+  position: absolute;
+  overflow-x: hidden;
+  transform: translateY(-103%);
+  z-index: -100;
+  @include mobile {
+    position: absolute;
+    overflow-x: hidden;
+    transform: translateY(-150%) scale(1.8);
+    z-index: -100;
+  }
+}
+
+.feature-title {
+  @include mobile {
+    transform: scale(0.7);
+  }
+}
+
+.butterfly1 {
+  position: absolute;
+  left: 160px;
+  bottom:60px;
+  animation: butterfly1 4s linear infinite;
+  @include mobile {
+    bottom   : 5px;
+    left     : 50px;
+    transform: scale(0.6);
+    animation: mob-butterfly1 4s linear infinite;
+  }
+}
+
+@-moz-keyframes butterfly1 {
+  40% { left: 170px; bottom: 50px;}
+}
+@-webkit-keyframes butterfly1 {
+  40% { left: 170px; bottom: 50px;}
+}
+@-o-keyframes butterfly1 {
+  40% { left: 170px; bottom: 50px;}
+}
+@-ms-keyframes butterfly1 {
+  40% { left: 170px; bottom: 50px;}
+}
+@keyframes butterfly1 {
+  40% { left: 170px; bottom: 50px;}
+}
+
+@-moz-keyframes mob-butterfly1 {
+  40% { left: 60px; bottom: -5px;}
+}
+@-webkit-keyframes mob-butterfly1 {
+  40% { left: 60px; bottom: -5px;}
+}
+@-o-keyframes mob-butterfly1 {
+  40% { left: 60px; bottom: -5px;}
+}
+@-ms-keyframes mob-butterfly1 {
+  40% { left: 60px; bottom: -5px;}
+}
+@keyframes mob-butterfly1 {
+  40% { left: 60px; bottom: -5px;}
+}
+
+.butterfly2 {
+  position: absolute;
+  left: 40px;
+  bottom:150px;
+  animation: butterfly2 4s linear infinite;
+  @include mobile {
+    left: 60px;
+    bottom: 80px;
+    transform: scale(0.6);
+    animation: mob-butterfly2 4s linear infinite;
+  }
+}
+
+@-moz-keyframes butterfly2 {
+  40% { left: 30px; bottom: 160px;}
+}
+@-webkit-keyframes butterfly2 {
+  40% { left: 30px; bottom: 160px;}
+}
+@-o-keyframes butterfly2 {
+  40% { left: 30px; bottom: 160px;}
+}
+@-ms-keyframes butterfly2 {
+  40% { left: 30px; bottom: 160px;}
+}
+@keyframes butterfly2 {
+  40% { left: 30px; bottom: 160px;}
+}
+
+@-moz-keyframes mob-butterfly2 {
+  40% { left: 50px; bottom: 90px;}
+}
+@-webkit-keyframes mob-butterfly2 {
+  40% { left: 50px; bottom: 90px;}
+}
+@-o-keyframes mob-butterfly2 {
+  40% { left: 50px; bottom: 90px;}
+}
+@-ms-keyframes mob-butterfly2 {
+  40% { left: 50px; bottom: 90px;}
+}
+@keyframes mob-butterfly2 {
+  40% { left: 50px; bottom: 90px;}
+}
+
+.butterfly3 {
+  position: absolute;
+  right:380px;
+	bottom:200px;
+  animation: butterfly3 4s linear infinite;
+  @include pad {
+    right:180px;
+    bottom:40px;
+    animation: pad-butterfly3 4s linear infinite;
+  }
+  @include mobile {
+    transform: scale(0.6);
+    right:70px;
+    bottom:60px;
+    animation: mob-butterfly3 4s linear infinite;
+  }
+}
+
+@-moz-keyframes butterfly3 {
+  40% { right: 390px; bottom: 190px;}
+}
+@-webkit-keyframes butterfly3 {
+  40% { right: 390px; bottom: 190px;}
+}
+@-o-keyframes butterfly3 {
+  40% { right: 390px; bottom: 190px;}
+}
+@-ms-keyframes butterfly3 {
+  40% { right: 390px; bottom: 190px;}
+}
+@keyframes butterfly3 {
+  40% { right: 390px; bottom: 190px;}
+}
+
+@-moz-keyframes pad-butterfly3 {
+  40% { right: 190px; bottom: 30px;}
+}
+@-webkit-keyframes pad-butterfly3 {
+  40% { right: 190px; bottom: 30px;}
+}
+@-o-keyframes pad-butterfly3 {
+  40% { right: 190px; bottom: 30px;}
+}
+@-ms-keyframes pad-butterfly3 {
+  40% { right: 190px; bottom: 30px;}
+}
+@keyframes pad-butterfly3 {
+  40% { right: 190px; bottom: 30px;}
+}
+
+@-moz-keyframes mob-butterfly3 {
+  40% { right: 90px; bottom: 50px;}
+}
+@-webkit-keyframes mob-butterfly3 {
+  40% { right: 90px; bottom: 50px;}
+}
+@-o-keyframes mob-butterfly3 {
+  40% { right: 90px; bottom: 50px;}
+}
+@-ms-keyframes mob-butterfly3 {
+  40% { right: 90px; bottom: 50px;}
+}
+@keyframes mob-butterfly3 {
+  40% { right: 90px; bottom: 50px;}
+}
+
+
+// event
+
+.hotball {
+  position: absolute;
+  top: 100px;
+  right: 200px;
+  animation: hotball 4s linear infinite;
+  @include pad {
+    top: 40px;
+    right: 0px;
+    animation: mob-hotball 4s linear infinite;
+  }
+  @include mobile {
+    transform: scale(0.4);
+    top: 40px;
+    right: 0px;
+    animation: mob-hotball 4s linear infinite;
+  }
+}
+
+@-moz-keyframes hotball {
+  40% { top: 90px; right: 210px;}
+}
+@-webkit-keyframes hotball {
+  40% { top: 90px; right: 210px;}
+}
+@-o-keyframes hotball {
+  40% { top: 90px; right: 210px;}
+}
+@-ms-keyframes hotball {
+  40% { top: 90px; right: 210px;}
+}
+@keyframes hotball {
+  40% { top: 90px; right: 210px;}
+}
+
+@-moz-keyframes mob-hotball {
+  40% { top: 45px; right: 5px;}
+}
+@-webkit-keyframes mob-hotball {
+  40% { top: 45px; right: 5px;}
+}
+@-o-keyframes mob-hotball {
+  40% { top: 45px; right: 5px;}
+}
+@-ms-keyframes mob-hotball {
+  40% { top: 45px; right: 5px;}
+}
+@keyframes mob-hotball {
+  40% { top: 45px; right: 5px;}
+}
+
+.ball {
+  position: absolute;
+  top: -60px;
+  left: 120px;
+  transform: scale(0.8);
+  animation: ball 4s linear infinite;
+  @include pad {
+    top: -120px;
+    left: -20px;
+    animation: mob-ball 4s linear infinite;
+  }
+  @include mobile {
+    transform: scale(0.4);
+    top: -120px;
+    left: -20px;
+    animation: mob-ball 4s linear infinite;
+  }
+}
+
+@-moz-keyframes ball {
+  40% { top: -50px; left: 140px;}
+}
+@-webkit-keyframes ball {
+  40% { top: -50px; left: 140px;}
+}
+@-o-keyframes ball {
+  40% { top: -50px; left: 140px;}
+}
+@-ms-keyframes ball {
+  40% { top: -50px; left: 140px;}
+}
+@keyframes ball {
+  40% { top: -50px; left: 140px;}
+}
+
+@-moz-keyframes mob-ball {
+  40% { top: -110px; left: -10px;}
+}
+@-webkit-keyframes mob-ball {
+  40% { top: -110px; left: -10px;}
+}
+@-o-keyframes mob-ball {
+  40% { top: -110px; left: -10px;}
+}
+@-ms-keyframes mob-ball {
+  40% { top: -110px; left: -10px;}
+}
+@keyframes mob-ball {
+  40% { top: -110px; left: -10px;}
+}
+
+.bee {
+  position: absolute;
+  top: -60px;
+  right: -85px;
+  @include mobile {
+    transform: scale(0.6);
+  }
+}
+
+.arrow-left2 {
+  position: absolute;
+  top: 30%;
+  left: -1%;
+  transform: scale(0.8);
+  @include mobile {
+    top: 20%;
+    transform: scale(0.6);
+  }
+}
+
+.arrow-right2 {
+  position: absolute;
+  top: 30%;
+  right: -1%;
+  transform: scale(0.8) scaleX(-1);
+  @include mobile {
+    top: 20%;
+    transform: scale(0.6) scaleX(-1);
+  }
+}
+
+.footer-grass {
+  position: absolute;
+  top: -100px;
+  right: -40px;
+  @include pad {
+    right: -30px;
+    top: -140px;
+    transform: scale(0.7);
+  }
+  @include mobile {
+    right: -30px;
+    top: -80px;
+    transform: scale(0.7);
+  }
+}
