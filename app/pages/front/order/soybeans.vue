@@ -1,6 +1,14 @@
 <script setup>
 definePageMeta({ layout: false })
-useSiteHead()
+useSiteHead({
+  title: '豆製品訂購 | 台東聖母健康農莊',
+  description: '聖母健康農莊每週二、四新鮮現做豆漿與豆腐，歡迎線上預訂。',
+  ogTitle: '豆製品訂購 | 台東聖母健康農莊',
+  ogDescription: '聖母健康農莊每週二、四新鮮現做豆漿與豆腐，歡迎線上預訂。',
+  ogImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
+  twitterImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
+  ogUrl: 'https://holymotherfarm.netlify.app/front/order/soybeans',
+})
 
 import { ref, computed, onMounted } from 'vue'
 
@@ -157,17 +165,17 @@ function doSubmit() {
       <!-- 取貨日 tabs -->
       <div class="sb-day-tabs">
         <button
-          class="sb-day-tab"
-          :class="{ active: selDay === 'tue' }"
-          @click="selDay = 'tue'"
+            class="sb-day-tab"
+            :class="{ active: selDay === 'tue' }"
+            @click="selDay = 'tue'"
         >
           <span class="sb-day-tab__label">週二</span>
           <span class="sb-day-tab__date">{{ tueDateStr }}</span>
         </button>
         <button
-          class="sb-day-tab"
-          :class="{ active: selDay === 'thu' }"
-          @click="selDay = 'thu'"
+            class="sb-day-tab"
+            :class="{ active: selDay === 'thu' }"
+            @click="selDay = 'thu'"
         >
           <span class="sb-day-tab__label">週四</span>
           <span class="sb-day-tab__date">{{ thueDateStr }}</span>
@@ -184,19 +192,19 @@ function doSubmit() {
           <label>姓名 <span class="sb-required">*</span></label>
           <div class="sb-field__suggest-wrap">
             <input
-              v-model="name"
-              type="text"
-              placeholder="請輸入姓名"
-              autocomplete="off"
-              @input="onNameInput(name)"
-              @blur="setTimeout(() => showSuggest = false, 150)"
+                v-model="name"
+                type="text"
+                placeholder="請輸入姓名"
+                autocomplete="off"
+                @input="onNameInput(name)"
+                @blur="setTimeout(() => showSuggest = false, 150)"
             />
             <div v-if="showSuggest" class="sb-suggest">
               <div
-                v-for="n in suggestions"
-                :key="n"
-                class="sb-suggest__item"
-                @mousedown.prevent="pickName(n)"
+                  v-for="n in suggestions"
+                  :key="n"
+                  class="sb-suggest__item"
+                  @mousedown.prevent="pickName(n)"
               >{{ n }}</div>
             </div>
           </div>
@@ -217,11 +225,11 @@ function doSubmit() {
           <label>選擇規格（可多選）</label>
           <div class="sb-size-grid">
             <button
-              v-for="s in sizes"
-              :key="s.cc"
-              class="sb-size-chip"
-              :class="{ selected: s.selected }"
-              @click="toggleSize(s.cc)"
+                v-for="s in sizes"
+                :key="s.cc"
+                class="sb-size-chip"
+                :class="{ selected: s.selected }"
+                @click="toggleSize(s.cc)"
             >
               <svg v-if="s.selected" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="sb-chip-icon"><polyline points="20 6 9 17 4 12"/></svg>
               <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sb-chip-icon"><circle cx="12" cy="12" r="10"/></svg>
@@ -245,10 +253,10 @@ function doSubmit() {
             <div class="sb-qty-ctrl">
               <button @click="adjSoy(s.cc, -1)">−</button>
               <input
-                type="number"
-                :value="s.qty"
-                min="1"
-                @input="s.qty = Math.max(1, parseInt($event.target.value) || 1)"
+                  type="number"
+                  :value="s.qty"
+                  min="1"
+                  @input="s.qty = Math.max(1, parseInt($event.target.value) || 1)"
               />
               <button @click="adjSoy(s.cc, 1)">+</button>
             </div>
@@ -272,10 +280,10 @@ function doSubmit() {
             <div class="sb-qty-ctrl">
               <button @click="adjTofu(-1)">−</button>
               <input
-                type="number"
-                :value="tofuQty"
-                min="0"
-                @input="tofuQty = Math.max(0, parseInt($event.target.value) || 0)"
+                  type="number"
+                  :value="tofuQty"
+                  min="0"
+                  @input="tofuQty = Math.max(0, parseInt($event.target.value) || 0)"
               />
               <button @click="adjTofu(1)">+</button>
             </div>
@@ -311,13 +319,13 @@ function doSubmit() {
           <div class="sb-modal">
             <h3 class="sb-modal__title">新增自訂規格</h3>
             <input
-              v-model="customCc"
-              type="number"
-              placeholder="輸入毫升數（例如 1200）"
-              min="100"
-              step="100"
-              class="sb-modal__input"
-              @keyup.enter="confirmCustom"
+                v-model="customCc"
+                type="number"
+                placeholder="輸入毫升數（例如 1200）"
+                min="100"
+                step="100"
+                class="sb-modal__input"
+                @keyup.enter="confirmCustom"
             />
             <p class="sb-modal__hint">將記錄在裝置，下次自動出現</p>
             <div class="sb-modal__btns">
