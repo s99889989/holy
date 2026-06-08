@@ -46,11 +46,20 @@ const soybeans  = ref([])
 const bookingsLoading  = ref(false)
 const lunchesLoading   = ref(false)
 const soybeansLoading  = ref(false)
+const refreshing       = ref(false)
 
-const fetchAll = async () => {
-  bookingsLoading.value  = true
-  lunchesLoading.value   = true
-  soybeansLoading.value  = true
+const refresh = async () => {
+  refreshing.value = true
+  await fetchAll()
+  refreshing.value = false
+}
+
+const fetchAll = async (showLoading = false) => {
+  if (showLoading) {
+    bookingsLoading.value  = true
+    lunchesLoading.value   = true
+    soybeansLoading.value  = true
+  }
   try {
     const cid = customerStore.customer?.id ?? ''
     const [b, l, s] = await Promise.all([
@@ -150,7 +159,21 @@ const confirmCancel = async () => {
   }
 }
 
-// ── 豆漿紀錄格式化 ────────────────────────────────────────────────
+// ── 狀態說明（從後端讀取）────────────────────────────────────────
+const soybeanHints = ref({
+  '待確認': '我們已收到您的預約，將盡快來電確認。',
+  '已確認': '訂單已確認，請於取貨日前來取貨！',
+  '已取貨': '感謝您的訂購，歡迎再次訂購！',
+  '已取消': '此筆訂單已取消，歡迎再次訂購。',
+})
+
+const fetchSoybeanHints = async () => {
+  try {
+    const res  = await fetch(`${SOYBEAN_BASE.value}/settings/hints`)
+    const data = await res.json()
+    if (!data.error) Object.assign(soybeanHints.value, data)
+  } catch {}
+}
 const soybeanPickupLabel = (s) =>
     s.pickupDay === 'tue' ? '週二' : s.pickupDay === 'fri' ? '週五' : s.pickupDay
 
@@ -230,16 +253,18 @@ const confirmCancelSoybean = async () => {
 }
 
 onMounted(async () => {
-  // 讀取 URL query ?tab=soybeans 等，自動切換
   const route = useRoute()
   if (route.query.tab) activeTab.value = route.query.tab
-
-  if (customer.value) await fetchAll()
+  // hints 不需登入，頁面一開始就拉
+  fetchSoybeanHints()
+  if (customer.value) await fetchAll(true)
 })
 
 watch(customer, async (c) => {
-  if (c) await fetchAll()
-  else {
+  if (c) {
+    await fetchAll(true)
+    fetchSoybeanHints()
+  } else {
     bookings.value  = []
     lunches.value   = []
     soybeans.value  = []
@@ -292,6 +317,9 @@ watch(customer, async (c) => {
                         :class="{ 'profile-tab--active': activeTab === tab.key }"
                     >
                       {{ tab.label }}
+                    </button>
+                    <button class="profile-refresh-btn" @click="refresh" :disabled="refreshing" title="重新整理">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" :class="{ 'profile-refresh-spin': refreshing }"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                     </button>
                   </div>
 
@@ -392,8 +420,8 @@ watch(customer, async (c) => {
                             <span class="profile-card__price">合計 ${{ soybeanTotal(s) }}</span>
                           </div>
                           <p v-if="s.remark" class="profile-card__note">備註：{{ s.remark }}</p>
-                          <p v-if="statusHint(s.status)" class="profile-card__hint" :class="'profile-hint--' + s.status">
-                            {{ statusHint(s.status) }}
+                          <p v-if="soybeanHints[s.status]" class="profile-card__hint" :class="'profile-hint--' + s.status">
+                            {{ soybeanHints[s.status] }}
                           </p>
                           <div v-if="s.status === '待確認'" class="profile-card__actions">
                             <button @click="openEditSoybean(s)" class="profile-edit-btn">修改數量</button>
@@ -553,12 +581,14 @@ watch(customer, async (c) => {
 .profile-tabs {
   display: flex;
   flex-direction: row;
+  align-items: center;
   border-bottom: 2px solid #e0d8cc;
   margin-bottom: 20px;
+  overflow-x: auto;
 }
 .profile-tab {
-  padding: 10px 20px;
-  font-size: 14px;
+  padding: 10px 14px;
+  font-size: 13px;
   font-weight: 500;
   color: #888;
   background: none;
@@ -568,43 +598,62 @@ watch(customer, async (c) => {
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .profile-tab--active {
   color: #1FC29C;
   border-bottom-color: #1FC29C;
 }
+.profile-refresh-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px;
+  color: #aaa;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+  margin-bottom: -2px;
+  flex-shrink: 0;
+}
+.profile-refresh-btn:hover:not(:disabled) { color: #1FC29C; }
+.profile-refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.profile-refresh-btn svg { width: 16px; height: 16px; }
+.profile-refresh-spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── 卡片 ── */
 .profile-card {
   background: #fff;
   border: 1px solid #eee;
   border-radius: 16px;
-  padding: 16px;
+  padding: 14px 12px;
   margin-bottom: 12px;
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  gap: 16px;
+  gap: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 .profile-card__date {
   flex-shrink: 0;
-  width: 56px;
-  min-width: 56px;
+  width: 50px;
+  min-width: 50px;
   text-align: center;
-  border-radius: 12px;
-  padding: 8px 4px;
+  border-radius: 10px;
+  padding: 7px 4px;
 }
 .profile-card__date--teal  { background-color: #eef7f5; }
 .profile-card__date--amber { background-color: #fff8ee; }
 .profile-card__date--green { background-color: #eef7f0; }
 .profile-card__date-month {
-  font-size: 11px;
+  font-size: 10px;
   color: #aaa;
   margin: 0;
 }
 .profile-card__date-day {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 900;
   margin: 0;
   line-height: 1.2;
@@ -621,26 +670,26 @@ watch(customer, async (c) => {
   flex-direction: row;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 4px;
 }
 .profile-card__name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: #333;
 }
 .profile-card__meta {
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 10px;
-  font-size: 12px;
-  color: #888;
-  margin-top: 4px;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  color: #666;
+  margin-top: 5px;
 }
 .profile-card__price {
-  font-weight: 600;
+  font-weight: 700;
   color: #3d7a52;
+  font-size: 14px;
 }
 .profile-card__note {
   font-size: 12px;
@@ -666,36 +715,41 @@ watch(customer, async (c) => {
 .profile-hint--已取消      { background: #fdf0f0; color: #c0392b; }
 .profile-card__actions {
   margin-top: 10px;
+  display: flex;
+  gap: 8px;
 }
 
 /* ── 修改按鈕 ── */
 .profile-edit-btn {
+  flex: 1;
   display: inline-flex;
   align-items: center;
-  padding: 5px 14px;
-  font-size: 12px;
+  justify-content: center;
+  padding: 8px 0;
+  font-size: 13px;
   font-weight: 500;
   color: #1a5c3a;
   background: #f0f9f4;
   border: 1px solid #b8d8c4;
-  border-radius: 20px;
+  border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s;
-  margin-right: 6px;
 }
 .profile-edit-btn:hover { background: #ddf0e8; }
 
 /* ── 申請取消按鈕 ── */
 .profile-cancel-btn {
+  flex: 1;
   display: inline-flex;
   align-items: center;
-  padding: 5px 14px;
-  font-size: 12px;
+  justify-content: center;
+  padding: 8px 0;
+  font-size: 13px;
   font-weight: 500;
   color: #c0392b;
   background: #fff5f5;
   border: 1px solid #f5c6c6;
-  border-radius: 20px;
+  border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
