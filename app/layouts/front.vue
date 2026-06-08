@@ -1,6 +1,6 @@
 <template>
   <FrontNavbar />
-  <div class="overflow">
+  <div>
     <slot />
     <<FrontFooter />
     <button @click="topFunction" id="myBtn" title="Go to top" class="d-lg-none">

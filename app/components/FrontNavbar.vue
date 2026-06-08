@@ -7,15 +7,18 @@ import {usePermissionStore} from '~/stores/permission.js'
 const isOpen = ref(false)
 const route = useRoute()
 
+// 手機版「農莊體驗」子選單開合
+const mobExperienceOpen = ref(false)
+
 // 換頁時自動關閉所有選單
 watch(() => route.path, () => {
   isOpen.value = false
   mobAvatarOpen.value = false
+  mobExperienceOpen.value = false
 })
 
 function toggleMenu() {
   isOpen.value = !isOpen.value
-  // 打開導覽時關閉頭像面板
   if (isOpen.value) mobAvatarOpen.value = false
 }
 
@@ -37,9 +40,7 @@ const toggleAvatar = () => {
     nextTick(() => renderGoogleBtn('nav-google-btn'))
   }
 }
-const closeAvatar = () => {
-  avatarOpen.value = false
-}
+const closeAvatar = () => { avatarOpen.value = false }
 
 // ── 手機版頭像下拉 ────────────────────────────────────────────────────
 const mobAvatarOpen = ref(false)
@@ -47,7 +48,6 @@ const mobAvatarRef = ref(null)
 
 const toggleMobAvatar = () => {
   mobAvatarOpen.value = !mobAvatarOpen.value
-  // 打開頭像面板時關閉導覽
   if (mobAvatarOpen.value) isOpen.value = false
   if (mobAvatarOpen.value && !customer.value) {
     nextTick(() => renderGoogleBtn('nav-google-btn-mobile'))
@@ -97,8 +97,7 @@ const handleCredential = async (response) => {
       avatarOpen.value = false
       mobAvatarOpen.value = false
     }
-  } catch {
-  }
+  } catch {}
 }
 
 const logout = async () => {
@@ -116,8 +115,7 @@ const fetchMe = async () => {
       customerStore.setCustomer(data)
       await permissionStore.load(data.id, commonStore.data.main_url)
     }
-  } catch {
-  }
+  } catch {}
 }
 
 onMounted(async () => {
@@ -140,6 +138,20 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('click', onClickOutside)
 })
+
+// 「農莊體驗」子項目
+const experienceItems = [
+  { to: '/front/event',              label: '活動報名' },
+  { to: '/front/trial-courses',      label: '體驗課程' },
+  { to: '/front/herbs-encyclopedia', label: '香藥草圖鑑' },
+  { to: '/front/group-accommodation',label: '團體住宿' },
+  { to: '/front/venue-rental',       label: '場地租借' },
+]
+
+// 目前路徑是否落在「農莊體驗」任一子項
+const isExperienceActive = computed(() =>
+    experienceItems.some(item => route.path.startsWith(item.to))
+)
 </script>
 
 <template>
@@ -156,25 +168,21 @@ onUnmounted(() => {
         </NuxtLink>
       </div>
 
-      <!-- ★ 手機版頭像 icon -->
+      <!-- 手機版頭像 icon -->
       <div class="mob-avatar-wrapper" ref="mobAvatarRef">
-        <!-- 未登入：白色人形 icon -->
         <button v-if="!customer" @click="toggleMobAvatar" class="mob-avatar-btn mob-avatar-btn--guest">
           <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
           </svg>
         </button>
-        <!-- 已登入：頭像或首字母 -->
         <button v-else @click="toggleMobAvatar" class="mob-avatar-btn mob-avatar-btn--user">
           <img v-if="customer.picture" :src="customer.picture" :alt="customer.name" class="mob-avatar-btn__img">
           <span v-else>{{ customer.name?.charAt(0)?.toUpperCase() }}</span>
         </button>
 
-        <!-- 手機版下拉面板：綠色導覽風格 -->
         <Transition name="mob-avatar-drop">
           <div v-if="mobAvatarOpen" class="mob-avatar-dropdown">
-            <!-- 已登入 -->
             <div v-if="customer">
               <div class="mob-avatar-dropdown__info">
                 <div class="mob-avatar-dropdown__circle">
@@ -193,7 +201,6 @@ onUnmounted(() => {
               <a v-if="canAccessStaff" href="https://holymotherfarm.netlify.app/staff/home" target="_blank" rel="noopener noreferrer" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link mob-avatar-dropdown__link--staff">員工專區</a>
               <button @click="logout()" class="mob-avatar-dropdown__logout">登出</button>
             </div>
-            <!-- 未登入 -->
             <div v-else class="mob-avatar-dropdown__login">
               <p class="mob-avatar-dropdown__hint">登入後可查看訂位與便當紀錄</p>
               <div id="nav-google-btn-mobile"></div>
@@ -235,9 +242,26 @@ onUnmounted(() => {
       <li>
         <NuxtLink to="/front/production">產品訂購</NuxtLink>
       </li>
-      <li>
-        <NuxtLink to="/front/event">活動報名</NuxtLink>
+
+      <!-- ★ 農莊體驗 手機版 accordion -->
+      <li class="mob-exp-parent" :class="{ 'mob-exp-open': mobExperienceOpen }">
+        <button class="mob-exp-toggle" @click="mobExperienceOpen = !mobExperienceOpen">
+          農莊體驗
+          <svg class="mob-exp-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <Transition name="mob-exp-slide">
+          <ul v-if="mobExperienceOpen" class="mob-exp-sub">
+            <li v-for="item in experienceItems" :key="item.to">
+              <NuxtLink :to="item.to" @click="isOpen = false; mobExperienceOpen = false">
+                {{ item.label }}
+              </NuxtLink>
+            </li>
+          </ul>
+        </Transition>
       </li>
+
       <li role="menuitem">
         <NuxtLink to="/front/restaurant">田園餐廳</NuxtLink>
       </li>
@@ -280,97 +304,83 @@ onUnmounted(() => {
               <NuxtLink class="nav-item nav-link nav-cus" to="/front/news" style="color:#2a1001; font-weight: 500;">
                 最新消息
               </NuxtLink>
-              <div class="nav-line-mask">
-                <div class="nav-line-bar"></div>
-              </div>
+              <div class="nav-line-mask"><div class="nav-line-bar"></div></div>
             </div>
             <div class="nav-box mr-lg-3">
               <NuxtLink class="nav-item nav-link nav-cus" to="/front/about" style="color:#2a1001; font-weight: 500;">
                 關於我們
               </NuxtLink>
-              <div class="nav-line-mask">
-                <div class="nav-line-bar"></div>
-              </div>
+              <div class="nav-line-mask"><div class="nav-line-bar"></div></div>
             </div>
             <div class="nav-box mr-lg-3">
-              <NuxtLink class="nav-item nav-link nav-cus" to="/front/production"
-                        style="color:#2a1001; font-weight: 500;">產品訂購
+              <NuxtLink class="nav-item nav-link nav-cus" to="/front/production" style="color:#2a1001; font-weight: 500;">
+                產品訂購
               </NuxtLink>
-              <div class="nav-line-mask">
-                <div class="nav-line-bar"></div>
+              <div class="nav-line-mask"><div class="nav-line-bar"></div></div>
+            </div>
+
+            <!-- ★ 農莊體驗 桌機版 hover 下拉 -->
+            <div class="nav-box nav-box--dropdown mr-lg-3" :class="{ 'is-active': isExperienceActive }">
+              <button class="nav-item nav-link nav-cus nav-exp-btn" style="color:#2a1001; font-weight: 500;">
+                農莊體驗
+                <svg class="nav-exp-caret" width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M1.5 3.5l3.5 3 3.5-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <div class="nav-line-mask"><div class="nav-line-bar"></div></div>
+              <!-- 下拉面板 -->
+              <div class="nav-exp-dropdown">
+                <NuxtLink
+                    v-for="item in experienceItems"
+                    :key="item.to"
+                    :to="item.to"
+                    class="nav-exp-item"
+                >
+                  {{ item.label }}
+                </NuxtLink>
               </div>
             </div>
+
             <div class="nav-box mr-lg-3">
-              <NuxtLink class="nav-item nav-link nav-cus" to="/front/event" style="color:#2a1001; font-weight: 500;">
-                活動報名
+              <NuxtLink class="nav-item nav-link nav-cus" to="/front/restaurant" style="color:#2a1001; font-weight: 500;">
+                田園餐廳
               </NuxtLink>
-              <div class="nav-line-mask">
-                <div class="nav-line-bar"></div>
-              </div>
-            </div>
-            <div class="nav-box mr-lg-3">
-              <NuxtLink class="nav-item nav-link nav-cus" to="/front/restaurant"
-                        style="color:#2a1001; font-weight: 500;">田園餐廳
-              </NuxtLink>
-              <div class="nav-line-mask">
-                <div class="nav-line-bar"></div>
-              </div>
+              <div class="nav-line-mask"><div class="nav-line-bar"></div></div>
             </div>
             <div class="nav-box mr-lg-3">
               <NuxtLink class="nav-item nav-link nav-cus" to="/front/cafe" style="color:#2a1001; font-weight: 500;">
                 休憩小舖
               </NuxtLink>
-              <div class="nav-line-mask">
-                <div class="nav-line-bar"></div>
-              </div>
+              <div class="nav-line-mask"><div class="nav-line-bar"></div></div>
             </div>
             <div class="nav-box mr-lg-3">
               <NuxtLink class="nav-item nav-link nav-cus" to="/front/access" style="color:#2a1001; font-weight: 500;">
                 交通方式
               </NuxtLink>
-              <div class="nav-line-mask">
-                <div class="nav-line-bar"></div>
-              </div>
+              <div class="nav-line-mask"><div class="nav-line-bar"></div></div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- ★ 桌機頭像區 -->
+      <!-- 桌機頭像區 -->
       <div class="avatar-wrapper" ref="avatarRef">
-
-        <!-- 未登入：人形 icon -->
         <button v-if="!customer" @click="toggleAvatar" class="avatar-btn avatar-btn--guest">
           <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
           </svg>
         </button>
-
-        <!-- 已登入：Google 頭像或首字母 -->
         <button v-else @click="toggleAvatar" class="avatar-btn avatar-btn--user">
-          <img
-              v-if="customer.picture"
-              :src="customer.picture"
-              :alt="customer.name"
-              class="avatar-btn__img"
-          >
+          <img v-if="customer.picture" :src="customer.picture" :alt="customer.name" class="avatar-btn__img">
           <span v-else>{{ customer.name?.charAt(0)?.toUpperCase() || '?' }}</span>
         </button>
 
-        <!-- 下拉選單 -->
         <Transition name="avatar-drop">
           <div v-if="avatarOpen" class="avatar-dropdown">
-
-            <!-- 已登入：帳號資訊 -->
             <div v-if="customer" class="avatar-dropdown__header">
               <div class="avatar-dropdown__avatar">
-                <img
-                    v-if="customer.picture"
-                    :src="customer.picture"
-                    :alt="customer.name"
-                    class="avatar-dropdown__img"
-                >
+                <img v-if="customer.picture" :src="customer.picture" :alt="customer.name" class="avatar-dropdown__img">
                 <span v-else>{{ customer.name?.charAt(0)?.toUpperCase() }}</span>
               </div>
               <div class="avatar-dropdown__info">
@@ -378,14 +388,10 @@ onUnmounted(() => {
                 <p class="avatar-dropdown__email">{{ customer.email }}</p>
               </div>
             </div>
-
-            <!-- 未登入：Google 按鈕 -->
             <div v-else class="avatar-dropdown__header avatar-dropdown__header--login">
               <p class="avatar-dropdown__hint">登入後可查看訂位與便當紀錄</p>
               <div id="nav-google-btn"></div>
             </div>
-
-            <!-- 選單項目 -->
             <ul v-if="customer" class="avatar-dropdown__menu">
               <li>
                 <NuxtLink to="/front/profile/log" @click="closeAvatar" class="avatar-dropdown__item">
@@ -451,7 +457,173 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* ── 桌機頭像：絕對定位在 navbar 右側 ─────────────────────────── */
+/* ════════════════════════════════════════════════════
+   桌機「農莊體驗」下拉
+════════════════════════════════════════════════════ */
+.nav-box--dropdown {
+  position: relative;
+}
+
+/* 整個 nav-box hover 時顯示下拉 */
+.nav-box--dropdown:hover .nav-exp-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* 子項目被選中時，父按鈕底線常駐 */
+.nav-box--dropdown.is-active .nav-line-bar {
+  width: 100%;
+}
+
+.nav-exp-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* 完全複製全域 .nav-link 的樣式 */
+  line-height: 40px;
+  transform: translateY(5px);
+  font-size: 19px;
+  color: #2a1001;
+  font-weight: 500;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.nav-exp-caret {
+  transition: transform 0.2s;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.nav-box--dropdown:hover .nav-exp-caret {
+  transform: rotate(180deg);
+}
+
+/* 下拉面板 */
+.nav-exp-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  min-width: 130px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  border: 1px solid #f0f0f0;
+  padding: 6px 0;
+  z-index: 1050;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+}
+
+/* 讓 hover 區域連接 trigger 與面板，避免滑鼠移動時閃掉 */
+.nav-exp-dropdown::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  height: 12px;
+}
+
+.nav-exp-item {
+  display: block;
+  padding: 8px 18px;
+  color: #2a1001;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-exp-item:hover,
+.nav-exp-item.router-link-active {
+  background: #f0fdf9;
+  color: #1a7a52;
+  text-decoration: none;
+}
+.nav-exp-item.router-link-active {
+  font-weight: 600;
+}
+
+/* ════════════════════════════════════════════════════
+   手機版「農莊體驗」accordion
+════════════════════════════════════════════════════ */
+.mob-exp-parent {
+  list-style: none;
+}
+
+.mob-exp-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  /* 與其他 li > NuxtLink 的外觀保持一致，繼承父層樣式 */
+  color: inherit;
+  font-size: inherit;
+  font-family: inherit;
+  font-weight: inherit;
+  text-align: left;
+  line-height: inherit;
+}
+
+.mob-exp-arrow {
+  transition: transform 0.25s;
+  flex-shrink: 0;
+}
+.mob-exp-open .mob-exp-arrow {
+  transform: rotate(180deg);
+}
+
+.mob-exp-sub {
+  list-style: none;
+  padding: 4px 0 4px 16px;
+  margin: 0;
+  background: rgba(0,0,0,0.08);
+  border-radius: 6px;
+}
+.mob-exp-sub li a {
+  display: block;
+  padding: 6px 8px;
+  color: inherit;
+  font-size: 0.9em;
+  text-decoration: none;
+  opacity: 0.9;
+}
+.mob-exp-sub li a:hover,
+.mob-exp-sub li a.router-link-active {
+  opacity: 1;
+  font-weight: 600;
+}
+
+/* slide transition */
+.mob-exp-slide-enter-active,
+.mob-exp-slide-leave-active {
+  transition: max-height 0.25s ease, opacity 0.2s ease;
+  overflow: hidden;
+  max-height: 300px;
+}
+.mob-exp-slide-enter-from,
+.mob-exp-slide-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* ════════════════════════════════════════════════════
+   以下維持原有樣式不變
+════════════════════════════════════════════════════ */
+
+/* 桌機頭像：絕對定位在 navbar 右側 */
 .avatar-wrapper {
   position: absolute;
   right: 24px;
@@ -475,38 +647,12 @@ onUnmounted(() => {
   line-height: 1;
   overflow: hidden;
 }
+.avatar-btn--guest { background-color: #f8f9fa; color: #6c757d; }
+.avatar-btn--guest:hover { border-color: #1FC29C; color: #1FC29C; }
+.avatar-btn--user { background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 14px; border-color: #1FC29C; }
+.avatar-btn--user:hover { opacity: 0.88; }
+.avatar-btn__img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 
-.avatar-btn--guest {
-  background-color: #f8f9fa;
-  color: #6c757d;
-}
-
-.avatar-btn--guest:hover {
-  border-color: #1FC29C;
-  color: #1FC29C;
-}
-
-.avatar-btn--user {
-  background-color: #1FC29C;
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
-  border-color: #1FC29C;
-}
-
-.avatar-btn--user:hover {
-  opacity: 0.88;
-}
-
-.avatar-btn__img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
-  display: block;
-}
-
-/* ── 桌機下拉選單 ──────────────────────────────────────────────────── */
 .avatar-dropdown {
   position: absolute;
   right: 0;
@@ -514,329 +660,52 @@ onUnmounted(() => {
   width: 305px;
   background: #fff;
   border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
   border: 1px solid #f0f0f0;
   overflow: hidden;
   z-index: 1060;
 }
+.avatar-dropdown__header { padding: 16px; border-bottom: 1px solid #f5f5f5; display: flex; align-items: center; gap: 12px; }
+.avatar-dropdown__header--login { flex-direction: column; align-items: flex-start; }
+.avatar-dropdown__avatar { width: 38px; height: 38px; border-radius: 50%; background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+.avatar-dropdown__img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+.avatar-dropdown__name { font-size: 14px; font-weight: 600; color: #333; margin: 0; }
+.avatar-dropdown__email { font-size: 12px; color: #999; margin: 0; }
+.avatar-dropdown__hint { font-size: 13px; color: #666; margin: 0 0 10px; }
+.avatar-dropdown__menu { list-style: none; padding: 6px 0; margin: 0; }
+.avatar-dropdown__item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 14px; color: #444; text-decoration: none; transition: background 0.15s, color 0.15s; }
+.avatar-dropdown__item:hover { background-color: #f0fdf9; color: #1FC29C; text-decoration: none; }
+.avatar-dropdown__divider { border-top: 1px solid #f5f5f5; margin-top: 4px; }
+.avatar-dropdown__logout { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 16px; font-size: 18px; color: #e74c3c; background: none; border: none; cursor: pointer; transition: background 0.15s; text-align: left; }
+.avatar-dropdown__logout:hover { background-color: #fff5f5; }
 
-.avatar-dropdown__header {
-  padding: 16px 16px;
-  border-bottom: 1px solid #f5f5f5;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.avatar-drop-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.avatar-drop-leave-active { transition: opacity 0.1s ease, transform 0.1s ease; }
+.avatar-drop-enter-from { opacity: 0; transform: scale(0.95) translateY(4px); }
+.avatar-drop-leave-to { opacity: 0; transform: scale(0.95); }
 
-.avatar-dropdown__header--login {
-  flex-direction: column;
-  align-items: flex-start;
-}
+/* 手機版頭像 */
+.mob-avatar-wrapper { position: fixed; right: 68px; top: 23px; z-index: 3000; }
+.mob-avatar-btn { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; overflow: hidden; background: rgba(255,255,255,0.2); border: 2px solid rgba(0,0,0,0.12); color: #fff; transition: background 0.2s; }
+.mob-avatar-btn--user { background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 13px; border-color: #fff; }
+.mob-avatar-btn--user:hover { opacity: 0.88; }
+.mob-avatar-btn__img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 
-.avatar-dropdown__avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background-color: #1FC29C;
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  overflow: hidden;
-}
+.mob-avatar-dropdown { position: fixed; right: 12px; top: 68px; width: min(260px, calc(100vw - 24px)); background: #fff; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.12); border: 1px solid #f0f0f0; overflow: hidden; z-index: 3000; }
+.mob-avatar-dropdown__info { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #f5f5f5; }
+.mob-avatar-dropdown__circle { width: 38px; height: 38px; border-radius: 50%; background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+.mob-avatar-dropdown__text { min-width: 0; }
+.mob-avatar-dropdown__name { font-size: 14px; font-weight: 600; color: #333; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mob-avatar-dropdown__email { font-size: 11px; color: #999; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mob-avatar-dropdown__link { display: block; font-size: 14px; color: #444; padding: 9px 16px; text-decoration: none; transition: background 0.15s, color 0.15s; }
+.mob-avatar-dropdown__link:hover { background-color: #f0fdf9; color: #1FC29C; text-decoration: none; }
+.mob-avatar-dropdown__logout { display: block; width: 100%; text-align: left; font-size: 14px; color: #e74c3c; background: none; border: none; cursor: pointer; padding: 9px 16px; transition: background 0.15s; }
+.mob-avatar-dropdown__logout:hover { background-color: #fff5f5; }
+.mob-avatar-dropdown__login { padding: 14px 16px; }
+.mob-avatar-dropdown__hint { font-size: 13px; color: #666; margin: 0 0 10px; }
 
-.avatar-dropdown__img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
-  display: block;
-}
-
-.avatar-dropdown__info {
-  min-width: 0;
-}
-
-.avatar-dropdown__name {
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.avatar-dropdown__email {
-  font-size: 12px;
-  color: #999;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.avatar-dropdown__hint {
-  font-size: 18px;
-  color: #888;
-}
-
-.avatar-dropdown__menu {
-  list-style: none;
-  padding: 6px 0;
-  margin: 0;
-}
-
-.avatar-dropdown__item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 16px;
-  font-size: 18px;
-  color: #444;
-  text-decoration: none;
-  transition: background 0.15s, color 0.15s;
-}
-
-.avatar-dropdown__item:hover {
-  background-color: #f0fdf9;
-  color: #1FC29C;
-  text-decoration: none;
-}
-
-.avatar-dropdown__divider {
-  border-top: 1px solid #f5f5f5;
-  margin-top: 4px;
-}
-
-.avatar-dropdown__logout {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 16px;
-  font-size: 18px;
-  color: #e74c3c;
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: background 0.15s;
-  text-align: left;
-}
-
-.avatar-dropdown__logout:hover {
-  background-color: #fff5f5;
-}
-
-/* ── 桌機 Transition ────────────────────────────────────────────────── */
-.avatar-drop-enter-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.avatar-drop-leave-active {
-  transition: opacity 0.1s ease, transform 0.1s ease;
-}
-
-.avatar-drop-enter-from {
-  opacity: 0;
-  transform: scale(0.95) translateY(4px);
-}
-
-.avatar-drop-leave-to {
-  opacity: 0;
-  transform: scale(0.95);
-}
-
-/* ── 手機版頭像 icon ─────────────────────────────────────────────── */
-.mob-avatar-wrapper {
-  position: fixed;
-  right: 68px;
-  top: 23px;
-  z-index: 3000;
-}
-
-/* 未登入：白色半透明，跟原本風格一致 */
-.mob-avatar-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.2);
-  border: 2px solid rgba(0, 0, 0, 0.12);
-  color: #fff;
-  transition: background 0.2s;
-}
-
-.mob-avatar-btn--user {
-  background-color: #1FC29C;
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  border-color: #fff;
-}
-
-.mob-avatar-btn--user:hover {
-  opacity: 0.88;
-}
-
-.mob-avatar-btn__img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
-  display: block;
-}
-
-/* ── 手機版下拉面板：比照桌機白色卡片風格 ──────────────────────── */
-.mob-avatar-dropdown {
-  position: fixed;
-  right: 12px;
-  top: 68px;
-  width: min(260px, calc(100vw - 24px));
-  background: #fff;
-  border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
-  border: 1px solid #f0f0f0;
-  overflow: hidden;
-  z-index: 3000;
-}
-
-.mob-avatar-dropdown__info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
-  border-bottom: 1px solid #f5f5f5;
-}
-
-.mob-avatar-dropdown__circle {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background-color: #1FC29C;
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.mob-avatar-dropdown__text {
-  min-width: 0;
-}
-
-.mob-avatar-dropdown__name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mob-avatar-dropdown__email {
-  font-size: 11px;
-  color: #999;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mob-avatar-dropdown__link {
-  display: block;
-  font-size: 14px;
-  color: #444;
-  padding: 9px 16px;
-  text-decoration: none;
-  transition: background 0.15s, color 0.15s;
-}
-
-.mob-avatar-dropdown__link:hover {
-  background-color: #f0fdf9;
-  color: #1FC29C;
-  text-decoration: none;
-}
-
-.mob-avatar-dropdown__logout {
-  display: block;
-  width: 100%;
-  text-align: left;
-  font-size: 14px;
-  color: #e74c3c;
-  background: none;
-  border: none;
-  border-top: 1px solid #f5f5f5;
-  padding: 9px 16px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.mob-avatar-dropdown__logout:hover {
-  background-color: #fff5f5;
-}
-
-.mob-avatar-dropdown__login {
-  text-align: center;
-  padding: 14px 16px;
-}
-
-.mob-avatar-dropdown__hint {
-  font-size: 12px;
-  color: #888;
-  margin: 0 0 12px;
-}
-
-.avatar-dropdown__item--staff {
-  color: #1FC29C;
-  font-weight: 600;
-  border-top: 1px solid #f5f5f5;
-}
-
-.avatar-dropdown__item--staff:hover {
-  background-color: #f0fdf9;
-  color: #17a083;
-}
-
-.mob-avatar-dropdown__link--staff {
-  color: #1FC29C;
-  font-weight: 600;
-  border-top: 1px solid #f5f5f5;
-}
-
-.mob-avatar-dropdown__link--staff:hover {
-  background-color: #f0fdf9;
-  color: #17a083;
-}
-
-/* ── 手機版 Transition ───────────────────────────────────────────── */
-.mob-avatar-drop-enter-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.mob-avatar-drop-leave-active {
-  transition: opacity 0.1s ease, transform 0.1s ease;
-}
-
-.mob-avatar-drop-enter-from {
-  opacity: 0;
-  transform: scale(0.95) translateY(4px);
-}
-
-.mob-avatar-drop-leave-to {
-  opacity: 0;
-  transform: scale(0.95);
-}
+.mob-avatar-drop-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.mob-avatar-drop-leave-active { transition: opacity 0.1s ease, transform 0.1s ease; }
+.mob-avatar-drop-enter-from { opacity: 0; transform: scale(0.95) translateY(4px); }
+.mob-avatar-drop-leave-to { opacity: 0; transform: scale(0.95); }
 </style>

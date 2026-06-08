@@ -13,9 +13,9 @@ onMounted(() => {
     const btn = document.getElementById('myBtn')
     if (btn) {
       btn.style.display =
-        document.body.scrollTop > 20 || document.documentElement.scrollTop > 20
-          ? 'block'
-          : 'none'
+          document.body.scrollTop > 20 || document.documentElement.scrollTop > 20
+              ? 'block'
+              : 'none'
     }
   }
 })
@@ -27,37 +27,45 @@ function topFunction() {
 
 const commonStore = useCommonStore()
 const customerStore = useCustomerStore()
-const BASE         = computed(() => commonStore.data.main_url + '/holy/customer')
-const BOOKING_BASE = computed(() => commonStore.data.main_url + '/holy/booking')
-const LUNCH_BASE   = computed(() => commonStore.data.main_url + '/holy/lunch')
+const BASE          = computed(() => commonStore.data.main_url + '/holy/customer')
+const BOOKING_BASE  = computed(() => commonStore.data.main_url + '/holy/booking')
+const LUNCH_BASE    = computed(() => commonStore.data.main_url + '/holy/lunch')
+const SOYBEAN_BASE  = computed(() => commonStore.data.main_url + '/holy/soybean')
 
 const customer = computed(() => customerStore.customer)
 const activeTab = ref('bookings')
 const tabs = [
-  {key: 'bookings', label: '訂位紀錄'},
-  {key: 'lunches',  label: '便當紀錄'},
+  { key: 'bookings',  label: '訂位紀錄' },
+  { key: 'lunches',   label: '便當紀錄' },
+  { key: 'soybeans',  label: '豆漿紀錄' },
 ]
 
-const bookings = ref([])
-const lunches  = ref([])
-const bookingsLoading = ref(false)
-const lunchesLoading  = ref(false)
+const bookings  = ref([])
+const lunches   = ref([])
+const soybeans  = ref([])
+const bookingsLoading  = ref(false)
+const lunchesLoading   = ref(false)
+const soybeansLoading  = ref(false)
 
 const fetchAll = async () => {
-  bookingsLoading.value = true
-  lunchesLoading.value  = true
+  bookingsLoading.value  = true
+  lunchesLoading.value   = true
+  soybeansLoading.value  = true
   try {
     const cid = customerStore.customer?.id ?? ''
-    const [b, l] = await Promise.all([
+    const [b, l, s] = await Promise.all([
       fetch(`${BASE.value}/bookings?customerId=${cid}`).then(r => r.json()),
       fetch(`${BASE.value}/lunches?customerId=${cid}`).then(r => r.json()),
+      fetch(`${BASE.value}/soybeans?customerId=${cid}`).then(r => r.json()),
     ])
-    bookings.value = Array.isArray(b) ? b : []
-    lunches.value  = Array.isArray(l) ? l : []
+    bookings.value  = Array.isArray(b) ? b : []
+    lunches.value   = Array.isArray(l) ? l : []
+    soybeans.value  = Array.isArray(s) ? s : []
   } catch {
   } finally {
-    bookingsLoading.value = false
-    lunchesLoading.value  = false
+    bookingsLoading.value  = false
+    lunchesLoading.value   = false
+    soybeansLoading.value  = false
   }
 }
 
@@ -66,8 +74,9 @@ const onLogin = async () => { await fetchAll() }
 const logout = async () => {
   await fetch(`${BASE.value}/logout`, {method: 'POST', credentials: 'include'})
   customerStore.clearCustomer()
-  bookings.value = []
-  lunches.value  = []
+  bookings.value  = []
+  lunches.value   = []
+  soybeans.value  = []
 }
 
 // ── 狀態 Badge ────────────────────────────────────────────────────
@@ -77,13 +86,13 @@ const statusClass = (status) => {
     '已確認':      'profile-badge--success',
     '已入位':      'profile-badge--teal',
     '已取餐':      'profile-badge--teal',
+    '已取貨':      'profile-badge--teal',
     '客戶提出取消': 'profile-badge--orange',
     '已取消':      'profile-badge--danger',
   }
   return map[status] || 'profile-badge--muted'
 }
 
-// 客戶端顯示用的狀態文字
 const statusLabel = (status) => {
   const map = {
     '客戶提出取消': '已提出取消',
@@ -92,22 +101,21 @@ const statusLabel = (status) => {
   return map[status] ?? status
 }
 
-// 狀態說明提示
 const statusHint = (status) => {
   const map = {
     '待確認':      '我們已收到您的預約，將盡快來電確認。',
     '已確認':      '預約已確認，期待您的光臨！',
     '已入位':      '感謝您的到來，用餐愉快！',
     '已取餐':      '感謝您的訂購，歡迎再次光臨！',
+    '已取貨':      '感謝您的訂購，歡迎再次訂購！',
     '客戶提出取消': '取消申請已送出，請靜候我們來電確認。',
     '已取消':      '此筆預約已取消，歡迎再次預約。',
   }
   return map[status] ?? ''
 }
 
-// 可申請取消的狀態（已取消類不需要）
 const canRequestCancel = (status) =>
-  status === '待確認' || status === '已確認'
+    status === '待確認' || status === '已確認'
 
 // ── 申請取消 Modal ────────────────────────────────────────────────
 const cancelModal = ref({show: false, type: '', item: null, submitting: false})
@@ -129,7 +137,6 @@ const confirmCancel = async () => {
       method: 'PATCH',
       credentials: 'include',
     })
-    // 本地更新狀態
     if (type === 'booking') {
       const found = bookings.value.find(b => b.id === item.id)
       if (found) found.status = '客戶提出取消'
@@ -143,6 +150,18 @@ const confirmCancel = async () => {
   }
 }
 
+// ── 豆漿紀錄格式化 ────────────────────────────────────────────────
+const formatSoybeanItems = (s) => {
+  const parts = []
+  if (s.soymilkItems && Array.isArray(s.soymilkItems)) {
+    s.soymilkItems.forEach(item => {
+      parts.push(`豆漿 ${item.cc}cc × ${item.qty}`)
+    })
+  }
+  if (s.tofuQty) parts.push(`豆腐 × ${s.tofuQty} 塊`)
+  return parts
+}
+
 onMounted(async () => {
   if (customer.value) await fetchAll()
 })
@@ -150,14 +169,15 @@ onMounted(async () => {
 watch(customer, async (c) => {
   if (c) await fetchAll()
   else {
-    bookings.value = []
-    lunches.value  = []
+    bookings.value  = []
+    lunches.value   = []
+    soybeans.value  = []
   }
 })
 </script>
 
 <template>
-  <div class="overflow">
+  <div>
 
     <!-- Cover -->
     <section>
@@ -194,11 +214,11 @@ watch(customer, async (c) => {
                   <!-- Tab 切換 -->
                   <div class="profile-tabs">
                     <button
-                      v-for="tab in tabs"
-                      :key="tab.key"
-                      @click="activeTab = tab.key"
-                      class="profile-tab"
-                      :class="{ 'profile-tab--active': activeTab === tab.key }"
+                        v-for="tab in tabs"
+                        :key="tab.key"
+                        @click="activeTab = tab.key"
+                        class="profile-tab"
+                        :class="{ 'profile-tab--active': activeTab === tab.key }"
                     >
                       {{ tab.label }}
                     </button>
@@ -273,6 +293,36 @@ watch(customer, async (c) => {
                               申請取消
                             </button>
                           </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 豆漿紀錄 -->
+                  <div v-if="activeTab === 'soybeans'">
+                    <div v-if="soybeansLoading" class="profile-loading">載入中…</div>
+                    <div v-else-if="soybeans.length === 0" class="profile-empty-tab">
+                      尚無豆製品訂購紀錄
+                    </div>
+                    <div v-else>
+                      <div v-for="s in soybeans" :key="s.id" class="profile-card">
+                        <div class="profile-card__date profile-card__date--green">
+                          <p class="profile-card__date-month">{{ s.date?.substring(0, 7) }}</p>
+                          <p class="profile-card__date-day profile-card__date-day--green">{{ s.date?.substring(8, 10) }}</p>
+                        </div>
+                        <div class="profile-card__body">
+                          <div class="profile-card__row">
+                            <span class="profile-card__name">{{ s.name }}</span>
+                            <span class="profile-badge" :class="statusClass(s.status)">{{ statusLabel(s.status) }}</span>
+                          </div>
+                          <div class="profile-card__meta">
+                            <span>📅 {{ s.pickupDay === 'tue' ? '週二' : '週四' }} 取貨</span>
+                            <template v-for="item in formatSoybeanItems(s)" :key="item">
+                              <span>🥛 {{ item }}</span>
+                            </template>
+                          </div>
+                          <p v-if="s.note" class="profile-card__note">{{ s.note }}</p>
+                          <p v-if="statusHint(s.status)" class="profile-card__hint" :class="'profile-hint--' + s.status">{{ statusHint(s.status) }}</p>
                         </div>
                       </div>
                     </div>
@@ -356,7 +406,7 @@ watch(customer, async (c) => {
   margin-bottom: 20px;
 }
 .profile-tab {
-  padding: 10px 24px;
+  padding: 10px 20px;
   font-size: 14px;
   font-weight: 500;
   color: #888;
@@ -366,6 +416,7 @@ watch(customer, async (c) => {
   margin-bottom: -2px;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
 }
 .profile-tab--active {
   color: #1FC29C;
@@ -395,6 +446,7 @@ watch(customer, async (c) => {
 }
 .profile-card__date--teal  { background-color: #eef7f5; }
 .profile-card__date--amber { background-color: #fff8ee; }
+.profile-card__date--green { background-color: #eef7f0; }
 .profile-card__date-month {
   font-size: 11px;
   color: #aaa;
@@ -408,6 +460,7 @@ watch(customer, async (c) => {
 }
 .profile-card__date-day--teal  { color: #1FC29C; }
 .profile-card__date-day--amber { color: #f59e0b; }
+.profile-card__date-day--green { color: #3d7a52; }
 .profile-card__body {
   flex: 1;
   min-width: 0;
@@ -453,6 +506,7 @@ watch(customer, async (c) => {
 .profile-hint--已確認      { background: #eaf7f2; color: #0d6e4f; }
 .profile-hint--已入位      { background: #e6f7f4; color: #0a7a63; }
 .profile-hint--已取餐      { background: #e6f7f4; color: #0a7a63; }
+.profile-hint--已取貨      { background: #e6f7f4; color: #0a7a63; }
 .profile-hint--客戶提出取消 { background: #fff3e6; color: #9a4e00; }
 .profile-hint--已取消      { background: #fdf0f0; color: #c0392b; }
 .profile-card__actions {
@@ -581,30 +635,22 @@ watch(customer, async (c) => {
 .cmodal__btn--confirm {
   background: #e74c3c;
   color: #fff;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
 }
-.cmodal__btn--confirm:hover:not(:disabled) { opacity: 0.88; }
+.cmodal__btn--confirm:hover:not(:disabled) { background: #c0392b; }
 .cmodal__spinner {
-  width: 13px;
-  height: 13px;
-  border: 2px solid #fff;
-  border-top-color: transparent;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
   border-radius: 50%;
-  animation: cspin 0.6s linear infinite;
-  flex-shrink: 0;
+  animation: spin 0.7s linear infinite;
 }
-@keyframes cspin { to { transform: rotate(360deg); } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── Modal 動畫 ── */
-.cmodal-enter-active,
-.cmodal-leave-active { transition: opacity 0.2s ease; }
-.cmodal-enter-active .cmodal,
-.cmodal-leave-active .cmodal { transition: transform 0.2s ease, opacity 0.2s ease; }
-.cmodal-enter-from,
-.cmodal-leave-to { opacity: 0; }
-.cmodal-enter-from .cmodal,
-.cmodal-leave-to .cmodal { transform: scale(0.92) translateY(12px); opacity: 0; }
+.cmodal-enter-active, .cmodal-leave-active { transition: opacity 0.2s; }
+.cmodal-enter-from, .cmodal-leave-to { opacity: 0; }
 </style>

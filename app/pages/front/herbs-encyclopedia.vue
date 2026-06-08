@@ -1,0 +1,428 @@
+<script setup>
+definePageMeta({ layout: 'front' })
+useSiteHead()
+
+import { ref, computed } from 'vue'
+
+// ── 香藥草生產區（12種）
+const productionHerbs = [
+  { name:'七葉蘭', file:'七葉蘭.png', family:'五加科（Araliaceae），七葉蘭屬（Schefflera）', latin:'Haraella retrocalla (Hayata) Kudo', aliases:'香露兜、香露兜樹、香蘭葉、香林投等', tags:['食用','保健','香料'],
+    effect:['香蘭葉富含天然多種化合物，包括苯環類、黃酮類及脂肪酸衍生物。','科學研究顯示其具有良好的抗氧化活性與生理機能調節潛力。','香蘭葉的獨特芋頭香味，讓其成為東南亞料理與糕點中常見的天然香料與食品調味原料。','傳統上，香蘭葉具生津止咳、潤肺化痰、清熱利濕、解酒止咳等民間使用經驗，常用於輔助調理消化、緩解宿醉困倦及促進利尿解水腫等。','歷經近年來的研究與應用，香蘭葉萃取物已被廣泛添加於飲品及保健食品中，適合日常膳食補充，幫助維持身體健康。'] },
+  { name:'三葉五加', file:'三葉五加.png', family:'五加科（Araliaceae），五加屬（Eleutherococcus）', latin:'Eleutherococcus trifoliatus (L.) S.Y. Hu', aliases:'白箭、三加皮、白茨根、鵝掌箭等', tags:['藥用','野菜','茶飲'],
+    effect:['鮮葉搗爛外敷可治瘡傷、瘀腫。','民俗療法中，用於緩解風濕疼痛及發炎症狀，也用於緩和感冒、發燒及咳嗽。','莖枝切段後曬乾，可煮成芳香清涼的涼茶或飲料。新芽及嫩莖洗淨後可直接炒食或煮湯，是優良的野菜。'] },
+  { name:'白鶴靈芝', file:'白鶴靈芝.png', family:'床科（Acanthaceae），仙鶴花屬（Rhinacanthus）', latin:'Rhinacanthus nasutus (L.) Kurz', aliases:'天鶴草、仙鶴草、仙鶴靈芝草、靈芝草、癬草等', tags:['藥用','抗氧化','保健'],
+    effect:['《本草綱目拾遺》記載，以浸泡成茶服用。全株可用，常用莖葉。','為雲南白藥主要成分之一。','泰國傳統醫學：治療蛇咬傷、感染性皮膚病。','清肺、止咳、改善勞嗽、清熱潤肺、殺蟲止癢、改善濕疹抗真菌、抗病毒、降血脂、改善高血壓、抗發炎。','效益增強免疫系統調節免疫細胞活力抑制腫瘤生長保肝、促進肝細胞再生與修復抗氧化、清除超氧自由基。'] },
+  { name:'芳香萬壽菊', file:'芳香萬壽菊.png', family:'菊科（Asteraceae），萬壽菊屬（Tagetes）', latin:'Tagetes lucida Cav.', aliases:'甜萬壽菊、蘋果萬壽菊等', tags:['食用','茶飲','精油','抗氧化'],
+    effect:['花與葉常用來泡茶、製作飲品、甜點、烘焙及烹飪。嫩葉可用於炒蛋等料理。','冷泡茶能使茶味更清香爽口，日常飲用有助清肝去熱、緩解鼻咽不適。','金黃色花朵經水煮萃取天然黃色食用色素或染料。','花含抗壞血酸（維生素C）與黃酮類，具抗氧化功能，保護細胞免受自由基傷害。','精油用於香料、化妝品及芳香療法。精油具有抗菌和抗氧化活性，適合護膚及芳香療法應用。'] },
+  { name:'扁桃斑鳩菊', file:'扁桃斑鳩菊.png', family:'菊科（Asteraceae），斑鳩菊屬（Vernonia）', latin:'Vernonia amygdalina Delile.', aliases:'桃葉斑鳩菊、苦膽葉、扁桃苦葉等', tags:['藥用','保健','抗氧化'],
+    effect:['含有多種活性成分，如倍半萜內脂類、黃酮類、固醇類皂苷等。','傳統上用於抗瘧疾、抗菌、抗氧化及抗發炎。','現代研究顯示其萃取物在細胞與動物實驗中具有抗癌潛力，能抑制肺癌細胞移動和侵襲能力，具抑制腫瘤轉移的可能性。','常被做成茶飲、保健食品或護膚品成分，用於日常健康維持與天然保養。'] },
+  { name:'迷迭香', file:'迷迭香.png', family:'唇形科（Lamiaceae），鼠尾草屬（Salvia）', latin:'Salvia rosmarinus Spenn.', aliases:'海洋之露（源自拉丁文 Rosmarinus，意為「海露」）等', tags:['食用','精油','抗氧化','香料'],
+    effect:['迷迭香使用多見於烹調，如加入烤肉、燉湯、海鮮料理與花草茶，能去腥提香，帶來清新濃郁的芳香，增添料理層次。','迷迭香葉含豐富精油及活性成分，具抗氧化、抗菌與提神作用，亦可用於家庭芳香、沐浴或草本療法中。','法規通過後，台灣衛生福利部允許將迷迭香萃取物用作食品添加物中的抗氧化劑，主要活性成分包含迷迭香酸、咖啡酸衍生物、雙萜類化合物等。','廣泛應用於烘焙製品、調味料、油脂及堅果醬等食品中，延緩氧化、保持風味與品質。'] },
+  { name:'甜菊', file:'甜菊.png', family:'菊科（Asteraceae），甜菊屬（Stevia）', latin:'Stevia rebaudiana Bertoni', aliases:'甜草、甜葉菊、斯特維亞菊等', tags:['食用','代糖','保健'],
+    effect:['甜菊葉提取的甜菊糖苷是低熱量、零卡路里的天然甜味劑。','甜度約為蔗糖的200倍以上。','方便用微量代替砂糖和其他糖類，廣泛用於食品工業（如無糖餅乾、巧克力、飲料）、藥品工業及健康食品。','適合糖尿病患者及需控糖、控重人士使用。目前多國均已批准使用甜菊糖苷作為甜味劑。','甜菊糖苷安全性高，無致癌性，食用量依規範控制。'] },
+  { name:'魚腥草', file:'魚腥草.png', family:'三白草科（Saururaceae），蕺菜屬（Houttuynia）', latin:'Houttuynia cordata Thunb', aliases:'蕺菜、折耳根、臭菜、臭唸草（台語）狗貼耳（客家人）、十藥（日本）等', tags:['藥用','野菜','清熱'],
+    effect:['魚腥草自古為中醫清熱解毒要藥，主要用於：治療肺熱咳嗽、解癰腫瘡毒、清熱利尿治療熱淋。','在中醫方劑中常見，如「銀翹散」「普濟消毒飲」均有應用；也常以鮮草或乾草熬湯、入丸散，用於呼吸道感染或熱淋小便不利。','鮮草：輕汆燙後作為野菜，去腥又保留風味。','乾草：沖泡青草茶、釀酒，或與雞肉同燉，兼具保健與調味功能。'] },
+  { name:'鳳梨鼠尾草', file:'鳳梨鼠尾草.png', family:'唇形科（Lamiaceae），鼠尾草屬（Salvia）', latin:'Salvia elegans Vahl', aliases:'雅美鼠尾草等', tags:['食用','茶飲','女性保健'],
+    effect:['促進發汗，緩解感冒症狀，產後調理，淨化身體，殺菌作用，治療月經不調及更年期症狀（傳統用於女性調理），調節脂溢性皮炎、濕疹、皺紋、頭髮稀疏（生髮）。','葉子作為茶飲，香氣濃郁，有助舒緩壓力與提振精神，入茶飲當作替代茶，涼感降溫，適合夏季飲用。','嫩葉沾粉油炸作為食用配菜，葉片用於製作沙拉、沙拉醬及其他料理調味。','葉片提取作為漱口劑，幫助減輕喉嚨痛。'] },
+  { name:'貓鬚草', file:'貓鬚草.png', family:'唇形科（Lamiaceae），貓鬚草屬（Orthosiphon）', latin:'Orthosiphon aristatus (Blume) Miq.', aliases:'化石草、腎茶、腎草、貓鬚公、腰只草等', tags:['藥用','腎茶','抗發炎'],
+    effect:['貓鬚草，生長於東南亞溫潤的陽光與雨氣之間，葉色青翠，花絲細長如貓鬚，隨風輕舞，彷彿在呢喃低語。','民間稱之為「腎茶」，常用於清熱、利尿與去濕，是日常調養中溫柔而寧靜的草本。','現代研究證實，其富含迷迭香酸與黃酮類成分，具抗發炎、降尿酸與護腎功效，並被廣泛應用於輔助治療尿路結石與代謝疾病。'] },
+  { name:'檸檬香茅', file:'檸檬香茅.png', family:'禾本科（Gramineae），香茅屬（Cymbopogon）', latin:'Cymbopogon citratus (DC.) Stapf', aliases:'香茅、香巴茅、檸檬茅、風茅、大風茅、檸檬草等', tags:['食用','精油','茶飲','香料'],
+    effect:['檸檬香茅，主要含檸檬醛，散發宜人檸檬香氣。','廣泛栽培於熱帶及亞熱帶地區，台灣中部農民利用乾燥香茅製作草枕，並作為茶飲、料理調味料，替代檸檬水使用。','亞洲國家如印度、越南、泰國常用於湯類及肉類食品調味。','檸檬香茅茶口感舒適，能提振精神、恢復活力，並具心身療效。','其精油常添加於化妝品、肥皂及乳霜中作香精料。此外，其狹長葉片還可用於親子DIY與蚱蜢等童玩製作，兼具生活與文化價值。'] },
+  { name:'檸檬香蜂草', file:'檸檬香蜂草.png', family:'唇形科（Lamiaceae），香蜂草屬（Melissa）', latin:'Melissa officinalis L.', aliases:'蜜蜂花、檸檬香草、檸檬薄荷、香脂草等', tags:['茶飲','舒眠','保健','抗氧化'],
+    effect:['檸檬香蜂草因其鎮靜作用廣為人知，能幫助減輕焦慮、壓力和失眠。','此外含迷迭香酸，助緩解焦慮，並對抑鬱症有輔助效果。具抗菌和抗病毒特性，有助改善皰疹症狀。','其黃酮類化合物帶來抗氧化效能，可保護皮膚防紫外線傷害與老化。','傳統用於促進消化，緩解消化不良。','現代研究亦顯示其可提升認知功能和記憶力，尤其在阿茲海默症輔助治療中具潛力。','烹飪上常用於調味雞肉、魚及甜點，廣泛應用於草藥與保健領域。'] },
+]
+
+// ── 聖賀德佳花園（25種）
+const gardenHerbs = [
+  { name:'天使薔薇', file:'天使薔薇.png', family:'薔薇科（Rosaceae），薔薇屬（Rosa）', latin:"Rosa chinensis Jacq. 'Angel Wings'", aliases:'天使玫瑰、中國月季、月月紅等', tags:['食用','茶飲','觀賞'],
+    effect:['天使薔薇，屬於薔薇科，以粉嫩花色和細膩花香著稱，是備受歡迎的食用玫瑰花種。','花朵與葉片可新鮮摘取用於沖泡花茶，風味宜人、色澤清透，也能與時令蔬果拌成沙拉，增添層次清香。','花瓣可點綴甜品、蛋糕或入菜佐餐，為餐桌帶來天然的視覺與味覺饗宴。'] },
+  { name:'火炭母草', file:'火炭母草.png', family:'蓼科（Polygonaceae），春蓼屬（Persicaria）', latin:'Persicaria chinensis (L.) H. Gross', aliases:'秤飯藤、斑鳩飯、火炭星、白飯草、紅骨冷飯藤等', tags:['食用','藥用','野菜'],
+    effect:['火炭母草，是多年生草本植物，常見於田邊、荒地或濕潤草叢。葉片表面常帶有深色斑痕，像火炭燒過的印記，因此得名。','莖能匍匐或攀援生長，夏秋之際開細小花朵，果實為瘦果，呈三稜形，成熟時轉為棕褐色。','食用方面，以嫩莖葉為主，清炒或煮湯皆帶有微酸清香，是傳統常見的野菜。','習俗中，人們常把火炭母草搭配藥材煮成「轉骨湯」，作為食療滋補。'] },
+  { name:'仙草', file:'仙草.png', family:'唇形科（Lamiaceae），仙草屬（Platostoma）', latin:'Mesona procumbens Hemsley', aliases:'涼粉草、仙草凍草、仙草舅和田草等', tags:['食用','茶飲','清熱'],
+    effect:['仙草，在台灣飲食與文化中承載著夏日清涼的記憶。','自古以來，它被視為消暑解渴的良伴，製成仙草茶、仙草凍或甜品，成為庶民生活中最親近的草本。','它特殊的香氣來自豐富的揮發性成分，如 β-caryophyllene（β-石竹烯）、limonene（檸檬烯）等，不僅賦予草本清涼口感，也具備抗氧化、抗發炎等藥理潛力。','在傳統療方中，仙草被認為能清熱解毒、調理腸胃；現代研究則證實其萃取物含有多酚類與天然有機酸，能輔助健康保養。'] },
+  { name:'艾草', file:'艾草.png', family:'菊科（Asteraceae），蒿屬（Artemisia）', latin:'Artemisia princeps Pamp. var. orientalis', aliases:'黃花蒿、艾蒿、醫草、炙草、香艾等', tags:['藥用','食用','艾灸'],
+    effect:['艾草，帶著青草的清香與土地的溫暖，自古就走進人們的生活。它能驅寒散濕、安神助眠，在婦科調理與艾灸療法中扮演重要角色。端午節時，人們將艾草懸掛門口祈求平安。','此外，艾草也能入菜，是庶民飲食草仔粿的材料之一。現代研究證實，艾草富含活性成分，具有抗炎、抗氧化與保護心血管的功效。','今天，它化身為茶飲、香囊、藥浴與精油，守護著我們的日常。'] },
+  { name:'西洋蓍草', file:'西洋蓍草.png', family:'菊科（Asteraceae），蓍屬（Achillea）', latin:'Achillea millefolium L.', aliases:'千葉蓍、羽衣草、歐蓍等', tags:['藥用','精油','茶飲'],
+    effect:['西洋蓍草，自古被歐洲人譽為「最美麗的外傷藥草」。傳說希臘英雄阿基里斯曾以它為士兵止血療傷，因此得名。','中世紀修道院藥書中記載，它能處理小傷口、瘀青，並調理體質，是家家戶戶常備的草本植物。具備抗炎、抗過敏與促進傷口癒合的功效，也常被製成草本茶飲，幫助消化、舒緩腸胃與調整生理期。','隨著現代芳療的興起，它的精油因富含母菊天藍烴而呈現藍色，被稱為「藍色精華」，常見於護唇膏、防曬劑與芳療精油中，溫和守護健康生活。'] },
+  { name:'明日葉', file:'明日葉.png', family:'繖形科（Apiaceae），當歸屬（Angelica）', latin:'Angelica keiskei (Miq.) Koidz.', aliases:'長命草、八丈草、八丈朝鮮人參、明日草等', tags:['食用','保健','野菜'],
+    effect:['明日葉，被稱為「長壽草」，來自日本八丈島，十餘年前引入台灣，如今苗栗、南投與桃園皆有栽培，常見品種有青莖種與紅莖種。它的葉片鮮嫩帶甜，春季採收最為可口。','日常料理裡，明日葉可清炒、煮湯，帶來淡雅草香；也能曬乾泡茶，口感清爽回甘；或打成果汁、入糕點麵食，增添自然風味。','明日葉，是日常的天然補給，將健康與活力悄然融入每一道滋味。'] },
+  { name:'肥皂草', file:'肥皂草.png', family:'石竹科（Caryophyllaceae），肥皂草屬（Saponaria）', latin:'Saponaria officinalis L.', aliases:'石鹼花、皂花、肥皂花、野皂草等', tags:['清潔','藥用','觀賞'],
+    effect:['肥皂草，又名石鹼花，是大地溫柔的潔淨使者。全株富含天然皂素，可取代市售清潔品中的人工合成界面活性劑，為生活注入純粹而簡單的潔淨力量。','在歐洲流傳數百年，不僅清潔效果溫和，更因含有人蔘同類的皂角苷，使用後能讓肌膚滑嫩柔和。','其根部釋放的皂素還能調和酸化土壤，活化微生物，助力生態共生。製成的天然清潔品，於水中化為細膩泡沫，最終能自然分解、回歸循環，不留痕跡。潔淨的同時，也溫柔守護大地，讓生活與自然和諧共存。'] },
+  { name:'芸香', file:'芸香.png', family:'芸香科（Rutaceae），芸香屬（Ruta）', latin:'Ruta graveolens L.', aliases:'臭草、臭節草、恩寵之草等', tags:['藥用','香料'],
+    effect:['芸香，曬乾後會散發獨特的牛奶香氣。它富含礦物質，少量加入食物、飲料或酒中，便能添上一抹自然的麝香氣息。','中醫與現代研究皆指出，芸香具有解熱、抗炎與抑菌的效果，對健康有一定益處。然而，芸香也含有感光性成分，主要是「呋喃香豆素」（Furocoumarins）。','這類天然化合物具有光毒性，若皮膚接觸到其汁液後再暴露於陽光下，可能引發紅腫、水泡、疼痛，甚至留下色素沉澱，造成植物性光敏感皮膚炎。因此，在使用時需多加留意，避免過量或直接接觸皮膚後曝曬。'] },
+  { name:'金銀花', file:'金銀花.png', family:'忍冬科（Caprifoliaceae），忍冬屬（Lonicera）', latin:'Lonicera japonica Thunb.', aliases:'忍冬花、金花、銀花、雙花及二花等', tags:['藥用','茶飲','清熱','抗氧化'],
+    effect:['金銀花，花開時先白後黃，因而得名「金銀」。自古即為清熱解毒的良藥。中醫典籍記載，它能疏散風熱、解毒消炎，常用於感冒發熱、咽喉腫痛及癰腫瘡毒。','現代研究發現，金銀花含有綠原酸、黃酮類與揮發油，具抗菌、抗病毒與抗氧化作用。','日常生活裡，金銀花常入茶飲，清香回甘、消暑解渴；同時也被廣泛應用於化妝品與護膚品中。'] },
+  { name:'南薑', file:'南薑.png', family:'薑科（Zingiberaceae），月桃屬（Alpinia）', latin:'Alpinia galanga (L.) Sw.', aliases:'大高良薑、紅豆蔻、良薑等', tags:['食用','藥用','香料'],
+    effect:['南薑，塊莖帶著紅潤色澤，香氣溫和中帶點辛辣，隱約透著微甜，如肉桂般清雅，是料理和養生的好幫手。','早在《本草綱目》裡就記載，三年南薑是上品，可以溫胃散寒、幫助消化、舒緩疼痛。','現代研究也發現，它含有薑黃素等活性成分，具有抗發炎、抗病毒和抗真菌的潛力。','在飲食裡，南薑是泰國冬蔭功、馬來叻沙和咖哩不可缺少的味道，也是台灣沙茶醬、客家雞湯裡的靈魂香料。'] },
+  { name:'紅脈酸模', file:'紅脈酸模.png', family:'蓼科（Polygonaceae），酸模屬（Rumex）', latin:'Rumex sanguineus L.', aliases:'紅脈酸模、血酸模、血脈酸模等', tags:['食用','觀賞'],
+    effect:['紅脈酸模，鮮綠葉片佈滿深紅色脈絡，外觀醒目具觀賞價值。葉片柔嫩，基生葉呈蓮座狀排列，莖直立。口感帶有檸檬般的酸味，實際上是草酸帶來的酸澀感，而非檸檬葉或檸檬馬鞭草那類揮發性香氣。','適合生食入沙拉、加入湯品或搭配燉肉，為菜餚增添清爽風味。','嫩葉亦可打碎調製成醬汁或作為甜點與飲品的裝飾，展現其多元用途。'] },
+  { name:'紅紫蘇', file:'紅紫蘇.png', family:'唇形科（Lamiaceae），紫蘇屬（Perilla）', latin:'Perilla frutescens (L.) Britton var. crispa f. purpurea', aliases:'赤蘇、赤紫蘇、紅蘇等', tags:['食用','藥用','抗氧化'],
+    effect:['紅紫蘇，以深紫至赤紅色的葉片著稱。葉片邊緣多呈鋸齒狀，表面略帶皺紋，揉之散發出濃烈的辛香氣息，帶著獨特的青草與辛香料混合韻味。','紅紫蘇自古便在東亞文化中佔有一席之地，日本多用於醃漬梅子（紫蘇梅）、製作紫蘇粉，或作為料理點綴，帶來鮮明色澤與酸鹹風味；現代研究發現，紅紫蘇富含花青素、黃酮類及精油成分，具有抗氧化、抗發炎與調節免疫的潛力。'] },
+  { name:'庫拉索蘆薈', file:'庫拉索蘆薈.png', family:'百合科（Liliaceae），蘆薈屬（Aloe）', latin:'Aloe vera (L.) Burm.f.', aliases:'翠葉蘆薈、美國蘆薈、洋蘆薈等', tags:['食用','護膚','保健'],
+    effect:['蘆薈，帶著熱帶陽光的氣息，厚實葉片中蘊藏透明的膠質，清涼而純粹。','自古以來，它就是食療與養生的好伴侶：切丁後拌入蜂蜜水或果汁，滑嫩爽口；入甜品或水果沙拉，增添一抹自然清新。','蘆薈富含多醣、維生素與礦物質，能滋潤腸胃、幫助消化，為身體帶來溫和能量。','如今，它也常出現在各式飲品、保健食品與護膚品中，成為日常健康與美麗的幫手。'] },
+  { name:'泰國聖羅勒', file:'泰國聖羅勒.png', family:'唇形科（Lamiaceae），羅勒屬（Ocimum）', latin:'Ocimum tenuiflorum L.', aliases:'神羅勒、打拋葉、打拋、嘎拋等', tags:['食用','藥用','抗氧化','香料'],
+    effect:['泰國聖羅勒，葉片細長，揉捻時能散發丁香、茴香與胡椒香氣的辛辣氣息。其莖幹呈紫紅色或帶青綠，這是基因型、花青素含量以及光照與氣候變化共同作用的結果，讓植株展現豐富多彩的姿態。','泰國料理中，聖羅勒是不可或缺的靈魂，入鍋瞬間便香氣四溢，使打拋肉、湯品和街頭熱炒鮮活起來。','現代研究發現，聖羅勒富含精油、多酚及抗氧化成分，具有抗菌與抗發炎的功效。'] },
+  { name:'馬蘭', file:'馬蘭.png', family:'菊科（Asteraceae），馬蘭屬（Kalimeris）', latin:'Kalimeris indica (L.) Sch.Bip.', aliases:'紅梗菜、雞兒腸、田邊菊、紫菊、魚鰍串、螃蜞頭草等', tags:['食用','藥用','清熱','野菜'],
+    effect:['馬蘭，是田野裡常見的綠色身影。花朵黃紫相間，低調卻充滿活力，常吸引蜜蜂與蝴蝶停留。沿著田邊走，總能看到匍匐莖一路延伸，為土地添上一抹清新。','「馬蘭頭」這個名字，其實就是指馬蘭的嫩莖嫩葉。用來清炒、涼拌或煮湯，都帶有淡淡的香氣，味道清爽又親切。','不僅如此，馬蘭還富含蛋白質、纖維與胡蘿蔔素，對消化與健康都有益處。傳統上，人們也常把它視為清熱解毒的藥草，製作青草茶飲用。'] },
+  { name:'康復力', file:'康復力.png', family:'紫草科（Boraginaceae），康復力屬（Symphytum）', latin:'Symphytum officinale L.', aliases:'聚合草、友誼草、康固力等', tags:['藥用','護膚','保健'],
+    effect:['康復力是一種古老的藥草，因能幫助消炎、促進傷口癒合而聞名。它含有多酚、三萜類等天然成分，其中的「尿囊素」能加速皮膚修復。','不論是小傷口、濕疹還是燒燙傷，傳統上人們常用康復力來外敷，也因此成為護膚品的重要原料。','除了藥用，康復力的葉子還能入菜或泡茶，具補血與止瀉的效果，除此之外，還能作為飼料或有機肥料，對農田土壤也很有幫助。'] },
+  { name:'奧勒岡', file:'奧勒岡.png', family:'唇形科（Lamiaceae），牛至屬（Origanum）', latin:'Origanum vulgare L.', aliases:'牛至、奧勒岡葉、野馬鬱蘭等', tags:['食用','精油','抗氧化','香料'],
+    effect:['奧勒岡的葉片覆有淡淡絨毛，輕輕揉捻便散發濃郁辛香，為日常餐桌添上一抹溫潤氣息。它在義大利料理中經常登場，無論是搭配番茄醬汁、炭烤肉類，或是一杯簡單的香草茶，都能增添深度與層次。','除了料理，奧勒岡也散發著生活裡的自然力量。其精油富含香芹酚與百里酚，被譽為「超級抗菌精油」，具備強效抗菌與抗氧化特性，廣泛應用於芳療與天然清潔領域。','在遙遠的挪威，人們稱它為「山薄荷」（bergmynte），不僅作為調味與藥用植物，還會利用花朵作為染布素材，展現其多元而獨特的價值。'] },
+  { name:'綠薄荷', file:'綠薄荷.png', family:'唇形科（Lamiaceae），薄荷屬（Mentha）', latin:'Mentha spicata L.', aliases:'荷蘭薄荷、青薄荷、留蘭香、香花菜等', tags:['食用','茶飲','精油'],
+    effect:['薄荷是最古老的薄荷品種之一，以清新、甜潤又柔和的香氣著稱。其精油主要成分為香芹酮（Carvone），含量高達 60-70%，帶來獨特的涼感與甜香。','自古以來，綠薄荷被用於幫助消化、舒緩腹脹與腸胃不適，也常泡製成花草茶，讓身心放鬆愉悅。','現代研究指出，綠薄荷精油具抗菌、防腐與驅蟲作用，是天然的守護者。日常應用廣泛，從牙膏、漱口水、糖果、飲料，到護膚品、芳療與香氛，都能見到它的身影。','綠薄荷清新的氣息，不僅能點亮味蕾，更能舒緩壓力、安定情緒，是日常生活中不可或缺的草本好夥伴。'] },
+  { name:'蒲公英', file:'蒲公英.png', family:'菊科（Asteraceae），蒲公英屬（Taraxacum）', latin:'Taraxacum mongolicum Hand.-Mazz.', aliases:'黃花地丁、蒲公草、婆婆丁、地丁、金簪草、西洋蒲公英等', tags:['食用','藥用','清熱'],
+    effect:['蒲公英，看似隨風而生的小草，卻是藥食兼備的生活良伴。','中醫認為它苦甘而寒，具有清熱解毒、消炎利尿的功效。','在日常生活中，蒲公英的各個部位都能入菜，嫩葉可做沙拉或餃子餡，根部磨粉可泡茶或烘焙成無咖啡因的「蒲公英咖啡」。金黃花朵可以釀製成酒，在許多文化中都有悠久的歷史。這種酒被稱為「蒲公英酒」，是一種以蒲公英花瓣為主要原料、經發酵製成的果酒。'] },
+  { name:'歐芹', file:'歐芹.png', family:'繖形科（Apiaceae），歐芹屬（Petroselinum）', latin:'Petroselinum crispum (Mill.) Fuss.', aliases:'巴西里、香芹、洋香菜等', tags:['食用','香料'],
+    effect:['歐芹在西方飲食文化中，有著悠久的地位。古希臘人視它為力量與健康的象徵，常在餐宴中搭配食物；中世紀歐洲，人們則用它作為調味與藥草，成為家家戶戶必備的香料。直到今日，歐芹仍是料理裡不可或缺的角色。','卷葉香氣濃烈，點綴湯品與燉菜；平葉清爽細膩，最常見於義大利麵、沙拉與醬汁中。它的存在不僅是增添風味，也代表著飲食文化裡「健康與自然」的傳承。'] },
+  { name:'積雪草', file:'積雪草.png', family:'繖形花科（Piaceae），雷公根屬（Centella）', latin:'Centella asiatica (L.) Urban', aliases:'雷公草、老公根、蚶殼草、蚶殼仔草、連錢草等', tags:['食用','藥用','保健','抗氧化'],
+    effect:['積雪草，台灣俗稱「雷公根」，自古便是藥食同源的良伴。它富含五環三萜、黃酮、揮發油與多種活性成分，具有促進傷口癒合、抗發炎、退火解熱的效果，並能舒緩壓力、延緩老化。','民間常將新鮮葉片榨汁調蜜，清涼解渴、提神醒腦；曬乾後泡茶，入口回甘，清心退火。','料理中，人們也習慣將它打蛋煎成雷公根蛋健胃養身，或與小魚乾、魚丸燉雞湯，滋補助長。','現代生活裡，它更廣泛運用於茶飲、保健品與護膚品，從內而外呵護健康。'] },
+  { name:'薑黃', file:'薑黃.png', family:'薑科（Zingiberaceae），薑黃屬（Curcuma）', latin:'Curcuma longa L.', aliases:'黃薑、寶鼎香、毛薑黃等', tags:['食用','藥用','抗氧化','香料'],
+    effect:['薑黃，是亞洲飲食文化裡最具代表性的黃金香料。','自古以來，它在印度與東南亞被廣泛用於咖哩、燉飯與湯品，不僅增添鮮明色澤與溫暖辛香，也象徵吉祥與庇護。','在台灣與華人飲食中，薑黃常入藥膳、燉湯或養生茶飲，融入日常餐桌。','主要成分薑黃素，具有抗發炎、抗氧化作用，能舒緩腸胃、保護關節，並在現代研究中被發現，對心血管疾病、糖尿病等代謝症候群，以及神經退化疾病如阿茲海默症，皆展現潛在助益。'] },
+  { name:'檸檬馬鞭草', file:'檸檬馬鞭草.png', family:'馬鞭草科（Verbenaceae），檸檬馬鞭草屬（Aloysia）', latin:'Aloysia citriodora Paláu', aliases:'路易莎草、香水馬鞭草和檸檬香馬鞭草等', tags:['茶飲','精油','舒眠'],
+    effect:['檸檬馬鞭草為多年生灌木，莖直立，葉片狹長披針形，對生排列，搓揉即散發清新的檸檬香氣。夏季會開出淡紫或白色小花，姿態優雅。葉富含揮發油，主要成分為檸檬醛，氣息清新怡人。','檸檬馬鞭草常被用來沖泡花草茶，具有舒緩焦慮、放鬆身心與提振精神的效果，也能用於烘焙甜點、調製醋飲，為料理增添清爽風味。','萃取的精油廣泛應用於芳香療法、按摩及沐浴，具放鬆和抗炎作用，深受保健與天然護膚產品青睞。'] },
+  { name:'蘆筍', file:'蘆筍.png', family:'天門冬科（Asparagaceae），天門冬屬（Asparagus）', latin:'Asparagus officinalis L.', aliases:'石刁柏、野天門冬、小百部、筍草、露昏、文山竹、門冬薯等', tags:['食用','保健'],
+    effect:['蘆筍，為多年生草本，屬於雌雄異株。地下具肉質根與塊莖，每年春季萌發嫩莖，即為常見的蔬菜。夏季開淡黃色小花，秋季結球形漿果，由綠轉紅。','雄株只產生花粉，生長勢較強、嫩莖產量較高；雌株則結果，但因養分分配，嫩莖產量略低。栽培上多以雄株或全雄系品種為主。依外觀可分綠、白、紫三類，各具風味。','蘆筍富含葉酸、纖維、維生素A、C、K及抗氧化成分，被譽為「餐桌上的綠鑽石」，是護肝養生、舒緩疲勞的佳品。'] },
+  { name:'鑲邊左手香', file:'鑲邊左手香.png', family:'唇形科（Lamiaceae），鞘蕊花屬（Plectranthus）', latin:"Plectranthus amboinicus 'Variegata'", aliases:'斑葉左手香、斑葉印度薄荷、鑲邊到手香等', tags:['藥用','香料','抗發炎'],
+    effect:['鑲邊到手香，葉片厚實多毛，邊緣鑲有白色斑紋，輕搓葉片即散發出濃烈辛香。翠綠葉色鑲嵌白邊，層層葉片重疊如花，增添園藝觀賞價值，是非常適合盆栽與花壇栽培的觀葉植物。','民間應用中，鑲邊到手香被用來清熱潤喉、健胃化濕，或搗碎外敷以舒緩蚊蟲叮咬與小傷紅腫，亦常被加工成防蚊液。','萃取之精油主要成分為香芹酚與百里香酚，具有抗菌、防腐與抗發炎作用。被廣泛用於芳香療法中，能淨化空氣、舒緩壓力，並常添加於天然清潔用品中，有抑菌與除味效果。'] },
+]
+
+const sections = [
+  { key: 'production-area', label: '香藥草生產區', icon: '🌿', herbs: productionHerbs,
+    tags: ['食用','藥用','茶飲','精油','保健','抗氧化','香料','野菜','清熱','代糖','女性保健','舒眠','腎茶'] },
+  { key: 'saint-hedega-gardens', label: '聖賀德佳花園', icon: '🌸', herbs: gardenHerbs,
+    tags: ['食用','藥用','茶飲','保健','抗氧化','香料','野菜','清熱','觀賞','精油','護膚','艾灸','清潔','抗發炎','舒眠'] },
+]
+
+const activeSection = ref('production-area')
+const search = ref('')
+const activeTag = ref('')
+const modal = ref(null)
+
+const currentSection = computed(() => sections.find(s => s.key === activeSection.value))
+const currentTags = computed(() => currentSection.value.tags)
+
+const filtered = computed(() => {
+  const herbs = currentSection.value.herbs
+  return herbs.filter(h => {
+    const q = search.value.trim().toLowerCase()
+    const matchSearch = !q || h.name.includes(q) || h.aliases.toLowerCase().includes(q) || h.effect.some(e => e.includes(q))
+    const matchTag = !activeTag.value || h.tags.includes(activeTag.value)
+    return matchSearch && matchTag
+  })
+})
+
+const openModal = (herb) => { modal.value = herb }
+const closeModal = () => { modal.value = null }
+
+const tagColorMap = { '食用':'green','藥用':'red','茶飲':'teal','精油':'purple','保健':'blue','抗氧化':'amber','香料':'orange','野菜':'lime','清熱':'cyan','代糖':'pink','女性保健':'rose','舒眠':'indigo','腎茶':'emerald','護膚':'violet','抗發炎':'sky','觀賞':'fuchsia','艾灸':'brown','清潔':'slate' }
+const tagColor = (t) => tagColorMap[t] || 'green'
+</script>
+
+<template>
+  <div class="overflow">
+
+    <!-- Cover -->
+    <section>
+      <div class="cover-box">
+        <img class="img-fluid d-md-none mob-cover" src="/images/cafe/mobile-cafe-cover.png" alt="">
+        <img class="img-fluid d-none d-md-inline-block mob-cover" src="/images/cafe/cafe-cover.png" alt="">
+        <img class="cover-title" src="/images/plant/plant-title.png" alt="">
+      </div>
+    </section>
+
+    <!-- Content -->
+    <div class="container">
+      <section id="breadcrumb" class="my-1 mx-3 mx-sm-5">
+        <NuxtLink to="/front/public">首頁</NuxtLink> > 香藥草植物圖鑑
+      </section>
+
+      <section id="content" class="mx-3 mx-sm-5">
+        <div class="col-12 text-center my-3 sub-nav">香藥草植物圖鑑</div>
+        <div class="bar-green bar-green-center"></div>
+
+        <div class="row bg-greenweb py-4 px-sm-2">
+          <div class="col-12 px-sm-4">
+            <div class="row justify-content-center no-gutters">
+              <div class="col-12 rounded bg-lightGreen py-4 px-3">
+
+                <!-- Section Tabs -->
+                <div class="herbs-section-tabs mb-3">
+                  <button
+                      v-for="section in sections"
+                      :key="section.key"
+                      class="herbs-tab"
+                      :class="{ active: activeSection === section.key }"
+                      @click="activeSection = section.key; activeTag = ''"
+                  >
+                    <span>{{ section.icon }}</span>
+                    {{ section.label }}
+                    <span class="herbs-tab-count">{{ section.herbs.length }}</span>
+                  </button>
+                </div>
+
+                <!-- Filter Bar -->
+                <div class="herbs-filter-row mb-3">
+                  <div class="herbs-search-wrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9z" clip-rule="evenodd"/></svg>
+                    <input v-model="search" type="text" placeholder="搜尋名稱、別名或功效…" class="herbs-search-input" />
+                  </div>
+                  <button
+                      v-for="tag in currentTags"
+                      :key="tag"
+                      class="herbs-tag-btn"
+                      :class="{ active: activeTag === tag }"
+                      @click="activeTag = activeTag === tag ? '' : tag"
+                  >{{ tag }}</button>
+                </div>
+
+                <p class="herbs-result-count mb-3">共 {{ filtered.length }} 種植物</p>
+
+                <!-- Grid -->
+                <p v-if="filtered.length === 0" class="text-center py-4" style="color:#8a9e84;">找不到符合的植物</p>
+                <TransitionGroup name="herb-card-list" tag="div" class="herbs-grid">
+                  <div
+                      v-for="herb in filtered"
+                      :key="herb.name"
+                      class="herb-card"
+                      @click="openModal(herb)"
+                  >
+                    <div class="herb-card-img-wrap">
+                      <img :src="`/images/plant/${activeSection}/${herb.file}`" :alt="herb.name" class="herb-card-img" loading="lazy" />
+                      <div class="herb-card-overlay"><span>查看詳情</span></div>
+                    </div>
+                    <div class="herb-card-foot">
+                      <h2 class="herb-name">{{ herb.name }}</h2>
+                      <p class="herb-latin">{{ herb.latin }}</p>
+                      <div class="herb-tags">
+                        <span v-for="t in herb.tags" :key="t" class="htag" :class="`htag-${tagColor(t)}`">{{ t }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </TransitionGroup>
+
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bar-green bar-green-center2"></div>
+      </section>
+    </div>
+
+    <div class="col-12 col-md-12 text-center my-5">
+      <div class="btn col-md-6 cus-button">
+        <NuxtLink to="/front/public">回聖母健康農莊首頁</NuxtLink>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="bar-waterDrop mt-5 mx-lg-5"></div>
+    </div>
+
+    <!-- Modal -->
+    <Teleport to="body">
+      <Transition name="herbs-modal-fade">
+        <div v-if="modal" class="herbs-modal-backdrop" @click.self="closeModal">
+          <div class="herbs-modal-box">
+            <button class="herbs-modal-close" @click="closeModal">✕</button>
+            <div class="herbs-modal-inner">
+              <div class="herbs-modal-img-col">
+                <img :src="`/images/book/herbs/${activeSection}/${modal.file}`" :alt="modal.name" class="herbs-modal-img" />
+              </div>
+              <div class="herbs-modal-info-col">
+                <div class="herbs-modal-badge">{{ currentSection.label }}</div>
+                <h2 class="herbs-modal-name">{{ modal.name }}</h2>
+                <p class="herbs-modal-latin">{{ modal.latin }}</p>
+                <div class="herbs-modal-meta">
+                  <div class="herbs-meta-row"><span class="herbs-meta-label">科屬</span><span>{{ modal.family }}</span></div>
+                  <div class="herbs-meta-row"><span class="herbs-meta-label">學名</span><span style="font-style:italic">{{ modal.latin }}</span></div>
+                  <div class="herbs-meta-row"><span class="herbs-meta-label">別名</span><span>{{ modal.aliases }}</span></div>
+                </div>
+                <div class="herbs-modal-effect">
+                  <h3 class="herbs-effect-title">功效與用途</h3>
+                  <p v-for="(para, i) in modal.effect" :key="i" class="herbs-effect-para">{{ para }}</p>
+                </div>
+                <div class="herb-tags mt-2">
+                  <span v-for="t in modal.tags" :key="t" class="htag" :class="`htag-${tagColor(t)}`">{{ t }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+  </div>
+</template>
+
+<style scoped>
+/* ── Section Tabs ── */
+.herbs-section-tabs { display: flex; gap: 0; flex-wrap: wrap; }
+.herbs-tab {
+  padding: 0.6rem 1.2rem;
+  border: 1.5px solid #dce8d8;
+  background: #fff;
+  color: #5a6e54;
+  font-family: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.2s;
+  border-radius: 0;
+  white-space: nowrap;
+}
+.herbs-tab:first-child { border-radius: 6px 0 0 6px; }
+.herbs-tab:last-child  { border-radius: 0 6px 6px 0; border-left: none; }
+.herbs-tab:hover { background: #e8f0eb; color: #1a3d28; }
+.herbs-tab.active { background: #3d7a52; border-color: #3d7a52; color: #fff; }
+.herbs-tab-count {
+  font-size: 0.7rem;
+  background: rgba(0,0,0,0.1);
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+}
+.herbs-tab.active .herbs-tab-count { background: rgba(255,255,255,0.25); }
+
+/* ── Filter ── */
+.herbs-filter-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.herbs-search-wrap { position: relative; flex: 0 0 200px; }
+.herbs-search-wrap svg {
+  position: absolute; left: 0.6rem; top: 50%; transform: translateY(-50%);
+  width: 13px; height: 13px; color: #8a9e84;
+}
+.herbs-search-input {
+  width: 100%; padding: 0.35rem 0.7rem 0.35rem 1.9rem;
+  border: 1.5px solid #d0daca; border-radius: 999px;
+  font-size: 0.82rem; font-family: inherit; outline: none;
+  background: #f8faf7; color: #2a2e25; transition: border-color 0.2s;
+}
+.herbs-search-input:focus { border-color: #3d7a52; }
+.herbs-tag-btn {
+  padding: 0.25rem 0.7rem; border-radius: 999px;
+  border: 1.5px solid #c5d4be; background: transparent;
+  color: #5a6e54; font-size: 0.76rem; font-family: inherit;
+  cursor: pointer; white-space: nowrap; transition: all 0.15s;
+}
+.herbs-tag-btn:hover { border-color: #3d7a52; color: #3d7a52; }
+.herbs-tag-btn.active { background: #3d7a52; border-color: #3d7a52; color: #fff; }
+.herbs-result-count { font-size: 0.8rem; color: #8a9e84; margin: 0; }
+
+/* ── Grid ── */
+.herbs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+.herb-card {
+  background: #fff; border-radius: 12px; overflow: hidden;
+  cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+  transition: transform 0.22s, box-shadow 0.22s;
+}
+.herb-card:hover { transform: translateY(-4px); box-shadow: 0 10px 24px rgba(0,0,0,0.12); }
+.herb-card-img-wrap { position: relative; height: 170px; overflow: hidden; background: #e8f0eb; }
+.herb-card-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s; }
+.herb-card:hover .herb-card-img { transform: scale(1.04); }
+.herb-card-overlay {
+  position: absolute; inset: 0;
+  background: rgba(20,50,28,0);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding-bottom: 0.75rem; transition: background 0.25s;
+}
+.herb-card:hover .herb-card-overlay { background: rgba(20,50,28,0.32); }
+.herb-card-overlay span {
+  color: #fff; font-size: 0.75rem;
+  opacity: 0; transform: translateY(6px); transition: opacity 0.25s, transform 0.25s;
+}
+.herb-card:hover .herb-card-overlay span { opacity: 1; transform: translateY(0); }
+.herb-card-foot { padding: 0.75rem 0.875rem 0.875rem; }
+.herb-name {
+  font-family: 'Noto Serif TC', serif;
+  font-size: 0.95rem; font-weight: 600; margin: 0 0 0.2rem; color: #1a3d28;
+}
+.herb-latin { font-size: 0.68rem; color: #8a9e84; margin: 0 0 0.4rem; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.herb-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+
+/* ── Tags ── */
+.htag { font-size: 0.68rem; padding: 0.12rem 0.45rem; border-radius: 999px; font-weight: 500; }
+.htag-green   { background: #e8f5e9; color: #2e7d32; }
+.htag-red     { background: #fdecea; color: #b71c1c; }
+.htag-teal    { background: #e0f2f1; color: #00695c; }
+.htag-purple  { background: #f3e5f5; color: #6a1b9a; }
+.htag-blue    { background: #e3f2fd; color: #1565c0; }
+.htag-amber   { background: #fff8e1; color: #e65100; }
+.htag-orange  { background: #fff3e0; color: #bf360c; }
+.htag-lime    { background: #f9fbe7; color: #558b2f; }
+.htag-cyan    { background: #e0f7fa; color: #006064; }
+.htag-pink    { background: #fce4ec; color: #880e4f; }
+.htag-rose    { background: #fde8ec; color: #ad1457; }
+.htag-indigo  { background: #e8eaf6; color: #283593; }
+.htag-emerald { background: #e8f5e9; color: #1b5e20; }
+.htag-violet  { background: #ede7f6; color: #4527a0; }
+.htag-sky     { background: #e1f5fe; color: #01579b; }
+.htag-fuchsia { background: #fce4ec; color: #6a0080; }
+.htag-brown   { background: #efebe9; color: #4e342e; }
+.htag-slate   { background: #eceff1; color: #37474f; }
+
+/* ── Modal ── */
+.herbs-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(10,25,15,0.78); z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem; backdrop-filter: blur(5px);
+}
+.herbs-modal-box {
+  background: #fff; border-radius: 16px;
+  max-width: 820px; width: 100%; max-height: 90vh; overflow-y: auto;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.herbs-modal-close {
+  position: sticky; top: 1rem; float: right; margin: 1rem 1rem 0 0;
+  background: #f0f4ee; border: none; width: 1.9rem; height: 1.9rem;
+  border-radius: 50%; cursor: pointer; font-size: 0.85rem; color: #4a6044;
+  display: flex; align-items: center; justify-content: center; z-index: 1;
+}
+.herbs-modal-close:hover { background: #dce8d8; }
+.herbs-modal-inner { display: grid; grid-template-columns: 1fr 1.4fr; }
+.herbs-modal-img-col {
+  background: #edf3ea; display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem; border-radius: 16px 0 0 16px;
+}
+.herbs-modal-img { width: 100%; max-height: 420px; object-fit: contain; }
+.herbs-modal-info-col { padding: 1.75rem 1.75rem 1.75rem 1.25rem; overflow-y: auto; }
+.herbs-modal-badge {
+  display: inline-block; font-size: 0.7rem; background: #e8f2e5; color: #3d7a52;
+  padding: 0.15rem 0.55rem; border-radius: 999px; margin-bottom: 0.5rem; font-weight: 500;
+}
+.herbs-modal-name {
+  font-family: 'Noto Serif TC', serif;
+  font-size: 1.6rem; font-weight: 700; color: #1a3d28; margin: 0 0 0.2rem;
+}
+.herbs-modal-latin { font-size: 0.8rem; color: #8a9e84; font-style: italic; margin: 0 0 1rem; }
+.herbs-modal-meta {
+  background: #f4f9f2; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem;
+  display: flex; flex-direction: column; gap: 0.35rem;
+}
+.herbs-meta-row { font-size: 0.8rem; display: flex; gap: 0.5rem; align-items: baseline; }
+.herbs-meta-label { font-weight: 600; color: #3d7a52; min-width: 2.4rem; flex-shrink: 0; }
+.herbs-effect-title {
+  font-family: 'Noto Serif TC', serif;
+  font-size: 0.9rem; font-weight: 600; color: #1a3d28;
+  margin: 0 0 0.6rem; padding-bottom: 0.3rem; border-bottom: 2px solid #d4e8cd;
+}
+.herbs-effect-para { font-size: 0.84rem; line-height: 1.85; color: #3a4e36; margin: 0 0 0.5rem; }
+
+/* Transitions */
+.herbs-modal-fade-enter-active, .herbs-modal-fade-leave-active { transition: opacity 0.25s; }
+.herbs-modal-fade-enter-from, .herbs-modal-fade-leave-to { opacity: 0; }
+.herb-card-list-enter-active { transition: opacity 0.3s, transform 0.3s; }
+.herb-card-list-enter-from { opacity: 0; transform: translateY(10px); }
+.herb-card-list-leave-active { transition: opacity 0.2s; position: absolute; }
+.herb-card-list-leave-to { opacity: 0; }
+
+@media (max-width: 680px) {
+  .herbs-modal-inner { grid-template-columns: 1fr; }
+  .herbs-modal-img-col { border-radius: 16px 16px 0 0; }
+  .herbs-search-wrap { flex: 1 1 100%; }
+}
+</style>
