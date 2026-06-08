@@ -5,12 +5,12 @@ useSiteHead({
   description: '聖母健康農莊每週二、四新鮮現做豆漿與豆腐，歡迎線上預訂。',
   ogTitle: '豆製品訂購 | 台東聖母健康農莊',
   ogDescription: '聖母健康農莊每週二、四新鮮現做豆漿與豆腐，歡迎線上預訂。',
-  ogImage: 'https://holyfarm.netlify.app/images/order/soybeans_og.jpg',
-  twitterImage: 'https://holyfarm.netlify.app/images/order/soybeans_og.jpg',
-  ogUrl: 'https://holyfarm.netlify.app/front/order/soybeans',
+  ogImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
+  twitterImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
+  ogUrl: 'https://holymotherfarm.netlify.app/front/order/soybeans',
 })
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 
 // ── 日期工具 ────────────────────────────────────────────────────
 function getNext(dow) {
@@ -23,7 +23,7 @@ function getNext(dow) {
 function fmt(d) { return `${d.getMonth() + 1}月${d.getDate()}日` }
 
 const tueDateStr = fmt(getNext(2))
-const thueDateStr = fmt(getNext(4))
+const friDateStr = fmt(getNext(5))
 
 // ── 狀態 ────────────────────────────────────────────────────────
 const selDay = ref('tue')
@@ -31,53 +31,28 @@ const name   = ref('')
 const remark = ref('')
 const tofuQty = ref(0)
 
-// 尺寸清單
-const sizes = ref([])
+// 尺寸清單（固定，不依賴 client）
+const soymilkQty = ref(0)
+// 名稱建議
 // 名稱建議
 const knownNames = ref([])
 const suggestions = ref([])
 const showSuggest = ref(false)
 
-// 自訂規格 modal
-const customModal = ref(false)
-const customCc = ref('')
+// 聯絡方式
+const contact = ref('')
 
 // 送出成功 modal
 const successModal = ref(false)
 const successMsg = ref('')
 
 // ── localStorage ────────────────────────────────────────────────
-function loadStorage() {
-  try { knownNames.value = JSON.parse(localStorage.getItem('sm_names') || '[]') } catch { knownNames.value = [] }
-  let customs = []
-  try { customs = JSON.parse(localStorage.getItem('sm_sizes') || '[]') } catch {}
-  const all = [...new Set([800, ...customs])].sort((a, b) => a - b)
-  sizes.value = all.map(cc => ({ cc, selected: cc === 800, qty: 1 }))
-}
-
-onMounted(() => { if (import.meta.client) loadStorage() })
-
-// ── 尺寸操作 ────────────────────────────────────────────────────
-function toggleSize(cc) {
-  const s = sizes.value.find(x => x.cc === cc)
-  if (!s) return
-  s.selected = !s.selected
-  if (s.selected) s.qty = 1
-}
-
-function adjSoy(cc, delta) {
-  const s = sizes.value.find(x => x.cc === cc)
-  if (!s) return
-  s.qty = Math.max(1, s.qty + delta)
+function adjSoy(delta) {
+  soymilkQty.value = Math.max(0, soymilkQty.value + delta)
 }
 
 function adjTofu(delta) {
   tofuQty.value = Math.max(0, tofuQty.value + delta)
-}
-
-function bagStr(cc, qty) {
-  const bags = cc / 800 * qty
-  return Number.isInteger(bags) ? `${bags} 袋` : `${Math.round(bags * 10) / 10} 袋`
 }
 
 // ── 名稱建議 ────────────────────────────────────────────────────
@@ -89,28 +64,15 @@ function onNameInput(v) {
 }
 function pickName(n) { name.value = n; showSuggest.value = false }
 
-// ── 自訂規格 ────────────────────────────────────────────────────
-function confirmCustom() {
-  const v = parseInt(customCc.value)
-  if (!v || v < 100) { alert('請輸入有效的毫升數（最少 100cc）'); return }
-  if (!sizes.value.find(s => s.cc === v)) {
-    sizes.value.push({ cc: v, selected: true, qty: 1 })
-    sizes.value.sort((a, b) => a.cc - b.cc)
-    const customs = sizes.value.filter(s => s.cc !== 800).map(s => s.cc)
-    localStorage.setItem('sm_sizes', JSON.stringify(customs))
-  }
-  customModal.value = false
-  customCc.value = ''
-}
-
 // ── 摘要計算 ────────────────────────────────────────────────────
-const selectedSizes = computed(() => sizes.value.filter(s => s.selected))
-const hasOrder = computed(() => selectedSizes.value.length > 0 || tofuQty.value > 0)
-const dayLabel = computed(() => selDay.value === 'tue' ? `週二 ${tueDateStr}` : `週四 ${thueDateStr}`)
+const hasOrder = computed(() => soymilkQty.value > 0 || tofuQty.value > 0)
+const dayLabel = computed(() => selDay.value === 'tue' ? `週二 ${tueDateStr}` : `週五 ${friDateStr}`)
+const totalPrice = computed(() => soymilkQty.value * 50 + tofuQty.value * 50)
 
 // ── 送出 ────────────────────────────────────────────────────────
 function doSubmit() {
   if (!name.value.trim()) { alert('請輸入姓名'); return }
+  if (!contact.value.trim()) { alert('請輸入聯絡方式'); return }
   if (!hasOrder.value) { alert('請選擇豆漿規格或豆腐數量'); return }
 
   // 記住姓名
@@ -123,10 +85,12 @@ function doSubmit() {
     }
   } catch {}
 
-  let msg = `訂購人：${name.value}　取貨日：${dayLabel.value}\n\n`
-  selectedSizes.value.forEach(s => { msg += `豆漿 ${s.cc}cc × ${s.qty}（${bagStr(s.cc, s.qty)}）\n` })
+  const contactStr = contact.value.trim()
+  let msg = `訂購人：${name.value}　聯絡：${contactStr}　取貨日：${dayLabel.value}\n\n`
+  if (soymilkQty.value) msg += `豆漿 800cc × ${soymilkQty.value} 袋\n`
   if (tofuQty.value) msg += `豆腐 × ${tofuQty.value} 塊\n`
   if (remark.value.trim()) msg += `\n備註：${remark.value.trim()}`
+  msg += `\n\n合計：$${totalPrice.value}`
 
   successMsg.value = msg
   successModal.value = true
@@ -157,11 +121,6 @@ function doSubmit() {
         <svg xmlns="http://www.w3.org/2000/svg" class="sb-notice__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         豆子需提前一天浸泡，請盡早完成訂購，以便我們準備。
       </div>
-      <div class="sb-notice sb-notice--info">
-        <svg xmlns="http://www.w3.org/2000/svg" class="sb-notice__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        員工優惠價請於結帳時告知，系統不另外區分。
-      </div>
-
       <!-- 取貨日 tabs -->
       <div class="sb-day-tabs">
         <button
@@ -174,11 +133,11 @@ function doSubmit() {
         </button>
         <button
             class="sb-day-tab"
-            :class="{ active: selDay === 'thu' }"
-            @click="selDay = 'thu'"
+            :class="{ active: selDay === 'fri' }"
+            @click="selDay = 'fri'"
         >
-          <span class="sb-day-tab__label">週四</span>
-          <span class="sb-day-tab__date">{{ thueDateStr }}</span>
+          <span class="sb-day-tab__label">週五</span>
+          <span class="sb-day-tab__date">{{ friDateStr }}</span>
         </button>
       </div>
 
@@ -210,6 +169,15 @@ function doSubmit() {
           </div>
         </div>
         <div class="sb-field">
+          <label>聯絡方式（電話／農莊分機）<span class="sb-required">*</span></label>
+          <input
+              v-model="contact"
+              type="tel"
+              placeholder="例：0912-345-678 或分機 888"
+              autocomplete="off"
+          />
+        </div>
+        <div class="sb-field">
           <label>備註（選填）</label>
           <textarea v-model="remark" placeholder="例如：取貨時間、特殊需求" rows="2"></textarea>
         </div>
@@ -221,48 +189,25 @@ function doSubmit() {
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
           豆漿
         </div>
-        <div class="sb-field">
-          <label>選擇規格（可多選）</label>
-          <div class="sb-size-grid">
-            <button
-                v-for="s in sizes"
-                :key="s.cc"
-                class="sb-size-chip"
-                :class="{ selected: s.selected }"
-                @click="toggleSize(s.cc)"
-            >
-              <svg v-if="s.selected" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="sb-chip-icon"><polyline points="20 6 9 17 4 12"/></svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sb-chip-icon"><circle cx="12" cy="12" r="10"/></svg>
-              {{ s.cc }} cc
-              <span v-if="Number.isInteger(s.cc / 800)" class="sb-chip-sub">· {{ s.cc / 800 }}袋</span>
-            </button>
-            <button class="sb-size-chip sb-size-chip--add" @click="customModal = true">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sb-chip-icon"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              自訂
-            </button>
-          </div>
-        </div>
-
         <div class="sb-order-rows">
-          <div v-if="selectedSizes.length === 0" class="sb-empty-hint">請在上方選擇規格</div>
-          <div v-else v-for="s in selectedSizes" :key="s.cc" class="sb-order-row">
+          <div class="sb-order-row">
             <div class="sb-order-row__label">
-              {{ s.cc }} cc
-              <span class="sb-order-row__sub">{{ bagStr(s.cc, 1) }}裝 × $50</span>
+              豆漿 800cc
+              <span class="sb-order-row__sub">$50／袋</span>
             </div>
             <div class="sb-qty-ctrl">
-              <button @click="adjSoy(s.cc, -1)">−</button>
+              <button @click="adjSoy(-1)">−</button>
               <input
                   type="number"
-                  :value="s.qty"
-                  min="1"
-                  @input="s.qty = Math.max(1, parseInt($event.target.value) || 1)"
+                  :value="soymilkQty"
+                  min="0"
+                  @input="soymilkQty = Math.max(0, parseInt($event.target.value) || 0)"
               />
-              <button @click="adjSoy(s.cc, 1)">+</button>
+              <button @click="adjSoy(1)">+</button>
             </div>
           </div>
         </div>
-        <p class="sb-price-note">一般價 $50／袋（800cc）・員工價 $40／袋</p>
+        <p class="sb-price-note">$50／袋（800cc）</p>
       </div>
 
       <!-- 豆腐卡片 -->
@@ -275,7 +220,7 @@ function doSubmit() {
           <div class="sb-order-row">
             <div class="sb-order-row__label">
               豆腐
-              <span class="sb-order-row__sub">固定大小・$50／塊・員工價 $40</span>
+              <span class="sb-order-row__sub">$50／塊</span>
             </div>
             <div class="sb-qty-ctrl">
               <button @click="adjTofu(-1)">−</button>
@@ -293,15 +238,19 @@ function doSubmit() {
 
       <!-- 摘要 -->
       <div v-if="hasOrder" class="sb-summary">
-        <div v-for="s in selectedSizes" :key="s.cc" class="sb-summary__row">
-          <span>豆漿 {{ s.cc }}cc × {{ s.qty }}</span>
-          <span>{{ bagStr(s.cc, s.qty) }}</span>
+        <div v-if="soymilkQty" class="sb-summary__row">
+          <span>豆漿 800cc × {{ soymilkQty }} 袋</span>
+          <span>${{ soymilkQty * 50 }}</span>
         </div>
         <div v-if="tofuQty" class="sb-summary__row">
-          <span>豆腐</span>
-          <span>{{ tofuQty }} 塊</span>
+          <span>豆腐 × {{ tofuQty }} 塊</span>
+          <span>${{ tofuQty * 50 }}</span>
         </div>
         <div class="sb-summary__row sb-summary__row--total">
+          <span>合計</span>
+          <span>${{ totalPrice }}</span>
+        </div>
+        <div class="sb-summary__row">
           <span>取貨日</span>
           <span>{{ dayLabel }}</span>
         </div>
@@ -311,31 +260,6 @@ function doSubmit() {
       <button class="sb-submit" @click="doSubmit">確認送出訂單</button>
 
     </div><!-- /sb-wrap -->
-
-    <!-- 自訂規格 Modal -->
-    <Teleport to="body">
-      <Transition name="sb-modal-fade">
-        <div v-if="customModal" class="sb-modal-backdrop" @click.self="customModal = false">
-          <div class="sb-modal">
-            <h3 class="sb-modal__title">新增自訂規格</h3>
-            <input
-                v-model="customCc"
-                type="number"
-                placeholder="輸入毫升數（例如 1200）"
-                min="100"
-                step="100"
-                class="sb-modal__input"
-                @keyup.enter="confirmCustom"
-            />
-            <p class="sb-modal__hint">將記錄在裝置，下次自動出現</p>
-            <div class="sb-modal__btns">
-              <button @click="customModal = false">取消</button>
-              <button class="confirm" @click="confirmCustom">新增</button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
 
     <!-- 送出成功 Modal -->
     <Teleport to="body">
@@ -348,7 +272,7 @@ function doSubmit() {
             <h3 class="sb-modal__title">訂單已送出！</h3>
             <pre class="sb-modal__content">{{ successMsg }}</pre>
             <div class="sb-modal__btns">
-              <button class="confirm" @click="successModal = false; name = ''; remark = ''; tofuQty = 0; sizes.forEach(s => { s.selected = s.cc === 800; s.qty = 1 })">確認</button>
+              <button class="confirm" @click="successModal = false; name = ''; contact = ''; remark = ''; soymilkQty = 0; tofuQty = 0">確認</button>
             </div>
           </div>
         </div>
@@ -469,8 +393,10 @@ function doSubmit() {
 .sb-field:last-child { margin-bottom: 0; }
 .sb-field label { display: block; font-size: 13px; color: #5a6e54; margin-bottom: 5px; font-weight: 500; }
 .sb-field input[type=text],
+.sb-field input[type=tel],
 .sb-field textarea {
   width: 100%;
+  box-sizing: border-box;
   padding: 8px 12px;
   border: 1px solid #c5d4be;
   border-radius: 8px;
@@ -482,6 +408,7 @@ function doSubmit() {
   transition: border-color 0.2s;
 }
 .sb-field input[type=text]:focus,
+.sb-field input[type=tel]:focus,
 .sb-field textarea:focus { border-color: #3d7a52; }
 .sb-field textarea { resize: none; }
 .sb-required { color: #c0392b; }
@@ -534,7 +461,61 @@ function doSubmit() {
   transition: all .15s;
 }
 .sb-size-chip.selected { border-color: #3d7a52; background: #f0f9f4; color: #1a5c3a; font-weight: 600; }
-.sb-size-chip--add { border-style: dashed; color: #8a9e84; }
+.sb-size-chip--add { display: none; }
+
+/* ── Contact ── */
+.sb-contact-type {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.sb-contact-btn {
+  flex: 1;
+  padding: 7px;
+  border: 1.5px solid #c5d4be;
+  border-radius: 8px;
+  background: #fafcf9;
+  color: #5a6e54;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all .15s;
+}
+.sb-contact-btn.active {
+  border-color: #3d7a52;
+  background: #f0f9f4;
+  color: #1a5c3a;
+  font-weight: 600;
+}
+.sb-contact-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #c5d4be;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fafcf9;
+}
+.sb-contact-prefix {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #8a9e84;
+  background: #f0f4ee;
+  border-right: 1px solid #c5d4be;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.sb-contact-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: #2a2e25;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+}
 .sb-chip-icon { width: 13px; height: 13px; flex-shrink: 0; }
 .sb-chip-sub { font-size: 11px; opacity: 0.7; }
 
