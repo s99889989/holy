@@ -33,11 +33,11 @@ const LUNCH_BASE    = computed(() => commonStore.data.main_url + '/holy/lunch')
 const SOYBEAN_BASE  = computed(() => commonStore.data.main_url + '/holy/soybean')
 
 const customer = computed(() => customerStore.customer)
-const activeTab = ref('bookings')
+const activeTab = ref('soybeans')
 const tabs = [
+  { key: 'soybeans',  label: '豆漿紀錄' },
   { key: 'bookings',  label: '訂位紀錄' },
   { key: 'lunches',   label: '便當紀錄' },
-  { key: 'soybeans',  label: '豆漿紀錄' },
 ]
 
 const bookings  = ref([])
@@ -174,8 +174,35 @@ const fetchSoybeanHints = async () => {
     if (!data.error) Object.assign(soybeanHints.value, data)
   } catch {}
 }
-const soybeanPickupLabel = (s) =>
-    s.pickupDay === 'tue' ? '週二' : s.pickupDay === 'fri' ? '週五' : s.pickupDay
+const soybeanPickupLabel = (s) => {
+  const dayMap = { tue: 2, fri: 5 }
+  const weekNames = ['日', '一', '二', '三', '四', '五', '六']
+
+  // 優先用 pickupDate（如果後端有傳），否則從 createdAt 推算下一個取貨日
+  if (s.pickupDate) {
+    const d = new Date(s.pickupDate)
+    const m = d.getMonth() + 1
+    const day = d.getDate()
+    const w = weekNames[d.getDay()]
+    return `${m}/${day}（週${w}）`
+  }
+
+  // 從 createdAt 推算
+  const target = dayMap[s.pickupDay]
+  if (target !== undefined && s.createdAt) {
+    const base = new Date(s.createdAt)
+    const cur = base.getDay()
+    const diff = (target - cur + 7) % 7 || 7
+    base.setDate(base.getDate() + diff)
+    const m = base.getMonth() + 1
+    const day = base.getDate()
+    const w = weekNames[base.getDay()]
+    return `${m}/${day}（週${w}）`
+  }
+
+  // fallback
+  return s.pickupDay === 'tue' ? '週二' : s.pickupDay === 'fri' ? '週五' : s.pickupDay
+}
 
 const soybeanItems = (s) => {
   const parts = []
@@ -585,7 +612,10 @@ watch(customer, async (c) => {
   border-bottom: 2px solid #e0d8cc;
   margin-bottom: 20px;
   overflow-x: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
 }
+.profile-tabs::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 .profile-tab {
   padding: 10px 14px;
   font-size: 13px;
