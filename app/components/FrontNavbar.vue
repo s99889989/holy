@@ -195,8 +195,6 @@ const isExperienceActive = computed(() =>
                 </div>
               </div>
               <NuxtLink to="/front/profile/log" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">我的紀錄</NuxtLink>
-              <NuxtLink to="/front/profile/booking" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">線上訂位</NuxtLink>
-              <NuxtLink to="/front/profile/lunch" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">便當預訂</NuxtLink>
               <NuxtLink to="/front/profile/settings" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">帳號設定</NuxtLink>
               <a v-if="canAccessStaff" href="https://holymotherfarm.netlify.app/staff/home" target="_blank" rel="noopener noreferrer" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link mob-avatar-dropdown__link--staff">員工專區</a>
               <button @click="logout()" class="mob-avatar-dropdown__logout">登出</button>
@@ -403,24 +401,6 @@ const isExperienceActive = computed(() =>
                 </NuxtLink>
               </li>
               <li>
-                <NuxtLink to="/front/profile/booking" @click="closeAvatar" class="avatar-dropdown__item">
-                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                  </svg>
-                  線上訂位
-                </NuxtLink>
-              </li>
-              <li>
-                <NuxtLink to="/front/profile/lunch" @click="closeAvatar" class="avatar-dropdown__item">
-                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
-                  </svg>
-                  便當預訂
-                </NuxtLink>
-              </li>
-              <li>
                 <NuxtLink to="/front/profile/settings" @click="closeAvatar" class="avatar-dropdown__item">
                   <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -468,7 +448,7 @@ const isExperienceActive = computed(() =>
 .nav-box--dropdown:hover .nav-exp-dropdown {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0);
+  transform: translateX(-50%) translateY(0);
   pointer-events: auto;
 }
 
@@ -557,6 +537,10 @@ const isExperienceActive = computed(() =>
 ════════════════════════════════════════════════════ */
 .mob-exp-parent {
   list-style: none;
+  /* 蓋掉全域 .vertical.menu li 可能加的 border */
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .mob-exp-toggle {
@@ -566,15 +550,17 @@ const isExperienceActive = computed(() =>
   width: 100%;
   background: none;
   border: none;
+  outline: none;
   padding: 0;
   cursor: pointer;
-  /* 與其他 li > NuxtLink 的外觀保持一致，繼承父層樣式 */
-  color: inherit;
-  font-size: inherit;
+  /* 明確對齊其他 li > a 的外觀 */
+  color: #fff;
+  font-size: 22px;
   font-family: inherit;
   font-weight: inherit;
   text-align: left;
-  line-height: inherit;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
 }
 
 .mob-exp-arrow {
@@ -587,18 +573,18 @@ const isExperienceActive = computed(() =>
 
 .mob-exp-sub {
   list-style: none;
-  padding: 4px 0 4px 16px;
+  padding: 4px 0 8px 0;
   margin: 0;
-  background: rgba(0,0,0,0.08);
-  border-radius: 6px;
+  background: none;
 }
 .mob-exp-sub li a {
   display: block;
-  padding: 6px 8px;
-  color: inherit;
-  font-size: 0.9em;
+  padding: 8px 0;
+  color: #fff;
+  font-size: 18px;
   text-decoration: none;
-  opacity: 0.9;
+  opacity: 0.85;
+  letter-spacing: 0.03em;
 }
 .mob-exp-sub li a:hover,
 .mob-exp-sub li a.router-link-active {

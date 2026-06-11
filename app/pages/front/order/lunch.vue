@@ -1,7 +1,7 @@
 <script setup>
 import {ref, reactive, computed, watch} from 'vue'
-import {useCommonStore} from '~/stores/common.js'
-import {useCustomerStore} from '~/stores/customer.js'
+import { useCommonStore } from '~/stores/common.js'
+import { useCustomerStore } from '~/stores/customer.js'
 
 definePageMeta({ layout: 'front' })
 
