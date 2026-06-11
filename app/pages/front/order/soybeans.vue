@@ -27,18 +27,22 @@ const customer = computed(() => customerStore.customer)
 // ── 日期工具 ────────────────────────────────────────────────────
 function getNext(dow) {
   const now = new Date(), d = now.getDay()
-  const diff = ((dow - d + 7) % 7) || 7
+  // 今天剛好是目標星期幾則 diff = 0（今天就算），否則往後找最近一天
+  const diff = (dow - d + 7) % 7
   const n = new Date(now)
   n.setDate(now.getDate() + diff)
   return n
 }
 function fmt(d) { return `${d.getMonth() + 1}月${d.getDate()}日` }
 
-const tueDateStr = fmt(getNext(2))
-const friDateStr = fmt(getNext(5))
+const tueDate    = getNext(2)
+const friDate    = getNext(5)
+const tueDateStr = fmt(tueDate)
+const friDateStr = fmt(friDate)
 
 // ── 狀態 ────────────────────────────────────────────────────────
-const selDay     = ref('tue')
+// 預設選最近的取貨日（週二或週五哪個先到）
+const selDay     = ref(tueDate <= friDate ? 'tue' : 'fri')
 const name       = ref('')
 const contact    = ref('')
 const remark     = ref('')
@@ -277,13 +281,13 @@ onMounted(async () => {
         </NuxtLink>
         <div class="sb-header__text">
           <h1 class="sb-header__title">豆製品訂購</h1>
-          <p class="sb-header__sub">每週二、四新鮮現做・豆漿與豆腐</p>
+          <p class="sb-header__sub">每週二、五新鮮現做・豆漿與豆腐</p>
         </div>
 
         <!-- 登入區塊 -->
         <div class="sb-login-area" ref="loginAreaRef">
           <button v-if="!customer" class="sb-login-btn" @click="toggleLoginPanel">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <i class="fas fa-user"></i>
             登入
           </button>
           <button v-else class="sb-avatar-btn" @click="toggleLoginPanel">
@@ -296,7 +300,7 @@ onMounted(async () => {
             <div v-if="loginPanelOpen" class="sb-login-panel">
               <div v-if="!customer">
                 <p class="sb-login-panel__hint">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  <i class="fas fa-clipboard-check"></i>
                   登入後可查看訂購紀錄
                 </p>
                 <div id="sb-google-btn"></div>
@@ -323,13 +327,13 @@ onMounted(async () => {
 
       <!-- 登入提示橫幅（未登入時） -->
       <div v-if="!customer" class="sb-notice sb-notice--info">
-        <svg xmlns="http://www.w3.org/2000/svg" class="sb-notice__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        <i class="fas fa-clipboard-check sb-notice__icon"></i>
         <span><strong>登入 Google 帳號</strong>可查看歷史訂購紀錄，也可直接填寫下方資料下單。</span>
       </div>
 
       <!-- 提醒 -->
       <div class="sb-notice sb-notice--warn">
-        <svg xmlns="http://www.w3.org/2000/svg" class="sb-notice__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <i class="fas fa-exclamation-circle sb-notice__icon"></i>
         豆子需提前一天浸泡，請盡早完成訂購，以便我們準備。
       </div>
 
@@ -348,7 +352,7 @@ onMounted(async () => {
       <!-- 訂購人卡片 -->
       <div class="sb-card">
         <div class="sb-card__title">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <i class="fas fa-user"></i>
           訂購人
           <!-- 已登入標示 -->
           <span v-if="customer" class="sb-logged-badge">
@@ -385,7 +389,7 @@ onMounted(async () => {
       <!-- 豆漿卡片 -->
       <div class="sb-card">
         <div class="sb-card__title">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+          <i class="fas fa-mug-hot"></i>
           豆漿
         </div>
         <div class="sb-order-rows">
@@ -408,7 +412,7 @@ onMounted(async () => {
       <!-- 豆腐卡片 -->
       <div class="sb-card">
         <div class="sb-card__title">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          <i class="fas fa-th-large"></i>
           豆腐
         </div>
         <div class="sb-order-rows">
@@ -450,7 +454,7 @@ onMounted(async () => {
       <!-- 錯誤提示 -->
       <Transition name="sb-err-fade">
         <div v-if="errorMsg" class="sb-error">
-          <svg xmlns="http://www.w3.org/2000/svg" class="sb-error__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <i class="fas fa-exclamation-circle sb-error__icon"></i>
           <span>{{ errorMsg }}</span>
           <button class="sb-error__close" @click="errorMsg = ''">✕</button>
         </div>
@@ -473,7 +477,7 @@ onMounted(async () => {
         <div v-if="successModal" class="sb-modal-backdrop" @click.self="resetForm">
           <div class="sb-modal sb-modal--success">
             <div class="sb-modal__success-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <i class="fas fa-check"></i>
             </div>
             <h3 class="sb-modal__title">訂單已送出！</h3>
             <pre class="sb-modal__content">{{ successMsg }}</pre>
@@ -504,7 +508,7 @@ onMounted(async () => {
 /* ── Header ── */
 .sb-header {
   background: linear-gradient(135deg, #2d5a3d 0%, #1a3d28 100%);
-  padding: 1.25rem 1.5rem;
+  padding: 1rem 1rem;
   position: relative;
 }
 .sb-header__inner {
@@ -512,25 +516,34 @@ onMounted(async () => {
   margin: 0 auto;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 .sb-header__logo-img {
   height: 44px;
   filter: brightness(0) invert(1);
   opacity: 0.9;
 }
-.sb-header__text { flex: 1; }
+.sb-header__text { flex: 1; min-width: 0; }
 .sb-header__title {
   font-family: 'Noto Serif TC', serif;
   font-size: 1.1rem;
   font-weight: 700;
   color: #fff;
   margin: 0 0 2px;
+  white-space: nowrap;
 }
 .sb-header__sub {
   font-size: 0.78rem;
   color: rgba(255,255,255,0.65);
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 480px) {
+  .sb-header__logo { display: none; }
+  .sb-header { padding: 0.9rem 1rem; }
 }
 
 /* ── 登入區 ── */
@@ -643,7 +656,7 @@ onMounted(async () => {
 }
 .sb-notice--warn { background: #fff8e6; border: 1px solid #f0d080; color: #7a5800; }
 .sb-notice--info { background: #e8f4f0; border: 1px solid #b0d8cc; color: #1a5c48; }
-.sb-notice__icon { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
+.sb-notice__icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
 
 /* ── Day Tabs ── */
 .sb-day-tabs { display: flex; gap: 10px; margin-bottom: 1.25rem; }
@@ -668,7 +681,7 @@ onMounted(async () => {
   font-size: 15px; font-weight: 600; color: #1a3d28;
   margin-bottom: 1rem; font-family: 'Noto Serif TC', serif;
 }
-.sb-card__title svg { width: 18px; height: 18px; color: #3d7a52; flex-shrink: 0; }
+.sb-card__title i { font-size: 15px; color: #3d7a52; flex-shrink: 0; width: 18px; text-align: center; }
 
 /* ── Field ── */
 .sb-field { margin-bottom: 1rem; }
@@ -747,7 +760,7 @@ onMounted(async () => {
   border-radius: 10px; padding: 11px 14px;
   margin-bottom: 1rem; font-size: 13px; color: #c0392b;
 }
-.sb-error__icon { width: 16px; height: 16px; flex-shrink: 0; }
+.sb-error__icon { font-size: 15px; flex-shrink: 0; }
 .sb-error span { flex: 1; line-height: 1.5; }
 .sb-error__close {
   background: none; border: none; color: #c0392b;
@@ -808,7 +821,7 @@ onMounted(async () => {
   background: #e8f5ee; display: flex; align-items: center; justify-content: center;
   margin: 0 auto 0.75rem;
 }
-.sb-modal__success-icon svg { width: 26px; height: 26px; color: #3d7a52; }
+.sb-modal__success-icon i { font-size: 22px; color: #3d7a52; }
 .sb-modal__btns { display: flex; gap: 8px; }
 .sb-modal__btns button {
   flex: 1; padding: 9px;
