@@ -5,9 +5,9 @@ useSiteHead({
   description: '聖母健康農莊每週二、四新鮮現做豆漿與豆腐，歡迎線上預訂。',
   ogTitle: '豆製品訂購 | 台東聖母健康農莊',
   ogDescription: '聖母健康農莊每週二、四新鮮現做豆漿與豆腐，歡迎線上預訂。',
-  ogImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
-  twitterImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
-  ogUrl: 'https://holymotherfarm.netlify.app/front/order/soybeans',
+  ogImage: 'https://holyfarm.netlify.app/images/order/soybeans_og.jpg',
+  twitterImage: 'https://holyfarm.netlify.app/images/order/soybeans_og.jpg',
+  ogUrl: 'https://holyfarm.netlify.app/front/order/soybeans',
 })
 
 import { ref, computed, onMounted, nextTick } from 'vue'
