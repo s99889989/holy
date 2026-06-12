@@ -243,8 +243,8 @@ const isExperienceActive = computed(() =>
 
       <!-- ★ 農莊體驗 手機版 accordion -->
       <li class="mob-exp-parent" :class="{ 'mob-exp-open': mobExperienceOpen }">
-        <button class="mob-exp-toggle" @click="mobExperienceOpen = !mobExperienceOpen">
-          農莊體驗
+        <a class="mob-exp-toggle" href="#" @click.prevent="mobExperienceOpen = !mobExperienceOpen">農莊體驗</a>
+        <button class="mob-exp-arrow-btn" @click="mobExperienceOpen = !mobExperienceOpen" aria-label="展開農莊體驗">
           <svg class="mob-exp-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none">
             <path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
@@ -537,54 +537,44 @@ const isExperienceActive = computed(() =>
 ════════════════════════════════════════════════════ */
 .mob-exp-parent {
   list-style: none;
-  /* 蓋掉全域 .vertical.menu li 可能加的 border */
-  border: none !important;
-  outline: none !important;
-  box-shadow: none !important;
+  position: relative;
 }
 
-.mob-exp-toggle {
+/* <a> 不加任何 CSS，讓全域 li>a 自然套用 */
+
+/* 箭頭 button：overlay 在 <a> 同一行，用負 margin 貼著 <a> 的底部往上推 */
+.mob-exp-arrow-btn {
+  position: absolute;
+  right: 16px;
+  top: 0;
+  /* 與全域 li>a 的高度相同，讓箭頭垂直置中在文字行 */
+  height: var(--mob-nav-item-height, 62px);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  width: 100%;
   background: none;
   border: none;
-  outline: none;
-  padding: 0;
   cursor: pointer;
-  /* 明確對齊其他 li > a 的外觀 */
-  color: #fff;
-  font-size: 22px;
-  font-family: inherit;
-  font-weight: inherit;
-  text-align: left;
-  letter-spacing: 0.03em;
-  line-height: 1.4;
+  padding: 0;
+  color: inherit;
 }
 
 .mob-exp-arrow {
   transition: transform 0.25s;
-  flex-shrink: 0;
+  display: block;
 }
 .mob-exp-open .mob-exp-arrow {
   transform: rotate(180deg);
 }
 
+/* 子項目 */
 .mob-exp-sub {
   list-style: none;
-  padding: 4px 0 8px 0;
+  padding: 0;
   margin: 0;
-  background: none;
 }
 .mob-exp-sub li a {
-  display: block;
-  padding: 8px 0;
-  color: #fff;
-  font-size: 18px;
-  text-decoration: none;
-  opacity: 0.85;
-  letter-spacing: 0.03em;
+  font-size: 0.88em;
+  opacity: 0.88;
 }
 .mob-exp-sub li a:hover,
 .mob-exp-sub li a.router-link-active {
