@@ -2,12 +2,12 @@
 definePageMeta({ layout: false })
 useSiteHead({
   title: '豆製品訂購 | 台東聖母健康農莊',
-  description: '聖母健康農莊每週二、五新鮮現做豆漿與豆腐，歡迎線上預訂。',
+  description: '聖母健康農莊每週二、四新鮮現做豆漿與豆腐，歡迎線上預訂。',
   ogTitle: '豆製品訂購 | 台東聖母健康農莊',
-  ogDescription: '聖母健康農莊每週二、五新鮮現做豆漿與豆腐，歡迎線上預訂。',
-  ogImage: 'https://holyfarm.netlify.app/images/order/soybeans_og2.jpg',
-  twitterImage: 'https://holyfarm.netlify.app/images/order/soybeans_og2.jpg',
-  ogUrl: 'https://holyfarm.netlify.app/front/order/soybeans',
+  ogDescription: '聖母健康農莊每週二、四新鮮現做豆漿與豆腐，歡迎線上預訂。',
+  ogImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
+  twitterImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
+  ogUrl: 'https://holymotherfarm.netlify.app/front/order/soybeans',
 })
 
 import { ref, computed, onMounted, nextTick } from 'vue'
@@ -26,23 +26,42 @@ const customer = computed(() => customerStore.customer)
 
 // ── 日期工具 ────────────────────────────────────────────────────
 function getNext(dow) {
-  const now = new Date(), d = now.getDay()
-  // 今天剛好是目標星期幾則 diff = 0（今天就算），否則往後找最近一天
-  const diff = (dow - d + 7) % 7
-  const n = new Date(now)
-  n.setDate(now.getDate() + diff)
+  const now = new Date()
+  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const diff = ((dow - base.getDay() + 7) % 7) || 7
+  const n = new Date(base)
+  n.setDate(base.getDate() + diff)
   return n
 }
 function fmt(d) { return `${d.getMonth() + 1}月${d.getDate()}日` }
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
 
-const tueDate    = getNext(2)
-const friDate    = getNext(5)
-const tueDateStr = fmt(tueDate)
-const friDateStr = fmt(friDate)
+const tueDateStr  = fmt(getNext(2))
+const friDateStr  = fmt(getNext(5))
+const tueDateKey  = toDateStr(getNext(2))
+const friDateKey  = toDateStr(getNext(5))
+
+// ── 休息日 ──────────────────────────────────────────────────────
+const closedDates = ref([])
+
+const tueClosed = computed(() => closedDates.value.includes(tueDateKey))
+const friClosed = computed(() => closedDates.value.includes(friDateKey))
+
+async function fetchClosedDates() {
+  try {
+    const res  = await fetch(`${SOYBEAN_BASE.value}/admin/settings/closed-dates`)
+    const data = await res.json()
+    closedDates.value = Array.isArray(data.closedDates) ? data.closedDates : []
+    // 若預設選的取貨日是休息日，自動切換到另一天（如果另一天不是休息日）
+    if (selDay.value === 'tue' && tueClosed.value && !friClosed.value) selDay.value = 'fri'
+    if (selDay.value === 'fri' && friClosed.value && !tueClosed.value) selDay.value = 'tue'
+  } catch {}
+}
 
 // ── 狀態 ────────────────────────────────────────────────────────
-// 預設選最近的取貨日（週二或週五哪個先到）
-const selDay     = ref(tueDate <= friDate ? 'tue' : 'fri')
+const selDay     = ref('tue')
 const name       = ref('')
 const contact    = ref('')
 const remark     = ref('')
@@ -241,6 +260,7 @@ function resetForm() {
 // ── 初始化 ──────────────────────────────────────────────────────
 onMounted(async () => {
   loadKnownNames()
+  fetchClosedDates()
 
   // 嘗試取得已登入客戶
   try {
@@ -281,13 +301,13 @@ onMounted(async () => {
         </NuxtLink>
         <div class="sb-header__text">
           <h1 class="sb-header__title">豆製品訂購</h1>
-          <p class="sb-header__sub">每週二、五新鮮現做・豆漿與豆腐</p>
+          <p class="sb-header__sub">每週二、四新鮮現做・豆漿與豆腐</p>
         </div>
 
         <!-- 登入區塊 -->
         <div class="sb-login-area" ref="loginAreaRef">
           <button v-if="!customer" class="sb-login-btn" @click="toggleLoginPanel">
-            <i class="fas fa-user"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             登入
           </button>
           <button v-else class="sb-avatar-btn" @click="toggleLoginPanel">
@@ -300,7 +320,7 @@ onMounted(async () => {
             <div v-if="loginPanelOpen" class="sb-login-panel">
               <div v-if="!customer">
                 <p class="sb-login-panel__hint">
-                  <i class="fas fa-clipboard-check"></i>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
                   登入後可查看訂購紀錄
                 </p>
                 <div id="sb-google-btn"></div>
@@ -327,32 +347,46 @@ onMounted(async () => {
 
       <!-- 登入提示橫幅（未登入時） -->
       <div v-if="!customer" class="sb-notice sb-notice--info">
-        <i class="fas fa-clipboard-check sb-notice__icon"></i>
+        <svg xmlns="http://www.w3.org/2000/svg" class="sb-notice__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         <span><strong>登入 Google 帳號</strong>可查看歷史訂購紀錄，也可直接填寫下方資料下單。</span>
       </div>
 
       <!-- 提醒 -->
       <div class="sb-notice sb-notice--warn">
-        <i class="fas fa-exclamation-circle sb-notice__icon"></i>
+        <svg xmlns="http://www.w3.org/2000/svg" class="sb-notice__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         豆子需提前一天浸泡，請盡早完成訂購，以便我們準備。
       </div>
 
       <!-- 取貨日 tabs -->
       <div class="sb-day-tabs">
-        <button class="sb-day-tab" :class="{ active: selDay === 'tue' }" @click="selDay = 'tue'">
+        <button class="sb-day-tab"
+                :class="{ active: selDay === 'tue', closed: tueClosed }"
+                :disabled="tueClosed"
+                @click="!tueClosed && (selDay = 'tue')">
           <span class="sb-day-tab__label">週二</span>
           <span class="sb-day-tab__date">{{ tueDateStr }}</span>
+          <span v-if="tueClosed" class="sb-day-tab__closed">休息日</span>
         </button>
-        <button class="sb-day-tab" :class="{ active: selDay === 'fri' }" @click="selDay = 'fri'">
+        <button class="sb-day-tab"
+                :class="{ active: selDay === 'fri', closed: friClosed }"
+                :disabled="friClosed"
+                @click="!friClosed && (selDay = 'fri')">
           <span class="sb-day-tab__label">週五</span>
           <span class="sb-day-tab__date">{{ friDateStr }}</span>
+          <span v-if="friClosed" class="sb-day-tab__closed">休息日</span>
         </button>
+      </div>
+
+      <!-- 雙休公告 -->
+      <div v-if="tueClosed && friClosed" class="sb-notice sb-notice--warn" style="margin-bottom:1rem">
+        <svg xmlns="http://www.w3.org/2000/svg" class="sb-notice__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>本週豆製品暫停訂購，造成不便請見諒。</span>
       </div>
 
       <!-- 訂購人卡片 -->
       <div class="sb-card">
         <div class="sb-card__title">
-          <i class="fas fa-user"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           訂購人
           <!-- 已登入標示 -->
           <span v-if="customer" class="sb-logged-badge">
@@ -389,7 +423,7 @@ onMounted(async () => {
       <!-- 豆漿卡片 -->
       <div class="sb-card">
         <div class="sb-card__title">
-          <i class="fas fa-mug-hot"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
           豆漿
         </div>
         <div class="sb-order-rows">
@@ -412,7 +446,7 @@ onMounted(async () => {
       <!-- 豆腐卡片 -->
       <div class="sb-card">
         <div class="sb-card__title">
-          <i class="fas fa-th-large"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
           豆腐
         </div>
         <div class="sb-order-rows">
@@ -454,14 +488,14 @@ onMounted(async () => {
       <!-- 錯誤提示 -->
       <Transition name="sb-err-fade">
         <div v-if="errorMsg" class="sb-error">
-          <i class="fas fa-exclamation-circle sb-error__icon"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" class="sb-error__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           <span>{{ errorMsg }}</span>
           <button class="sb-error__close" @click="errorMsg = ''">✕</button>
         </div>
       </Transition>
 
       <!-- 送出 -->
-      <button class="sb-submit" :disabled="submitting" @click="doSubmit">
+      <button class="sb-submit" :disabled="submitting || (selDay === 'tue' && tueClosed) || (selDay === 'fri' && friClosed)" @click="doSubmit">
         <span v-if="submitting" class="sb-spinner"></span>
         {{ submitting ? '送出中…' : '確認送出訂單' }}
       </button>
@@ -477,7 +511,7 @@ onMounted(async () => {
         <div v-if="successModal" class="sb-modal-backdrop" @click.self="resetForm">
           <div class="sb-modal sb-modal--success">
             <div class="sb-modal__success-icon">
-              <i class="fas fa-check"></i>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
             <h3 class="sb-modal__title">訂單已送出！</h3>
             <pre class="sb-modal__content">{{ successMsg }}</pre>
@@ -508,7 +542,7 @@ onMounted(async () => {
 /* ── Header ── */
 .sb-header {
   background: linear-gradient(135deg, #2d5a3d 0%, #1a3d28 100%);
-  padding: 1rem 1rem;
+  padding: 1.25rem 1.5rem;
   position: relative;
 }
 .sb-header__inner {
@@ -516,34 +550,25 @@ onMounted(async () => {
   margin: 0 auto;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 .sb-header__logo-img {
   height: 44px;
   filter: brightness(0) invert(1);
   opacity: 0.9;
 }
-.sb-header__text { flex: 1; min-width: 0; }
+.sb-header__text { flex: 1; }
 .sb-header__title {
   font-family: 'Noto Serif TC', serif;
   font-size: 1.1rem;
   font-weight: 700;
   color: #fff;
   margin: 0 0 2px;
-  white-space: nowrap;
 }
 .sb-header__sub {
   font-size: 0.78rem;
   color: rgba(255,255,255,0.65);
   margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-@media (max-width: 480px) {
-  .sb-header__logo { display: none; }
-  .sb-header { padding: 0.9rem 1rem; }
 }
 
 /* ── 登入區 ── */
@@ -656,7 +681,7 @@ onMounted(async () => {
 }
 .sb-notice--warn { background: #fff8e6; border: 1px solid #f0d080; color: #7a5800; }
 .sb-notice--info { background: #e8f4f0; border: 1px solid #b0d8cc; color: #1a5c48; }
-.sb-notice__icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.sb-notice__icon { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
 
 /* ── Day Tabs ── */
 .sb-day-tabs { display: flex; gap: 10px; margin-bottom: 1.25rem; }
@@ -670,6 +695,16 @@ onMounted(async () => {
 .sb-day-tab__label { font-size: 15px; font-weight: 500; color: #2a2e25; }
 .sb-day-tab__date  { font-size: 11px; color: #8a9e84; }
 .sb-day-tab.active .sb-day-tab__label { color: #1a5c3a; }
+.sb-day-tab.closed {
+  cursor: not-allowed; opacity: 0.5;
+  background: #faf0f0; border-color: #f5c6c6;
+}
+.sb-day-tab.closed .sb-day-tab__label { color: #c0392b; }
+.sb-day-tab__closed {
+  font-size: 10px; color: #c0392b;
+  background: #fde8e8; border-radius: 4px;
+  padding: 1px 6px; font-weight: 500;
+}
 
 /* ── Card ── */
 .sb-card {
@@ -681,7 +716,7 @@ onMounted(async () => {
   font-size: 15px; font-weight: 600; color: #1a3d28;
   margin-bottom: 1rem; font-family: 'Noto Serif TC', serif;
 }
-.sb-card__title i { font-size: 15px; color: #3d7a52; flex-shrink: 0; width: 18px; text-align: center; }
+.sb-card__title svg { width: 18px; height: 18px; color: #3d7a52; flex-shrink: 0; }
 
 /* ── Field ── */
 .sb-field { margin-bottom: 1rem; }
@@ -760,7 +795,7 @@ onMounted(async () => {
   border-radius: 10px; padding: 11px 14px;
   margin-bottom: 1rem; font-size: 13px; color: #c0392b;
 }
-.sb-error__icon { font-size: 15px; flex-shrink: 0; }
+.sb-error__icon { width: 16px; height: 16px; flex-shrink: 0; }
 .sb-error span { flex: 1; line-height: 1.5; }
 .sb-error__close {
   background: none; border: none; color: #c0392b;
@@ -821,7 +856,7 @@ onMounted(async () => {
   background: #e8f5ee; display: flex; align-items: center; justify-content: center;
   margin: 0 auto 0.75rem;
 }
-.sb-modal__success-icon i { font-size: 22px; color: #3d7a52; }
+.sb-modal__success-icon svg { width: 26px; height: 26px; color: #3d7a52; }
 .sb-modal__btns { display: flex; gap: 8px; }
 .sb-modal__btns button {
   flex: 1; padding: 9px;
