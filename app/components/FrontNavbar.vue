@@ -143,9 +143,10 @@ onUnmounted(() => {
 const experienceItems = [
   { to: '/front/event',              label: '活動報名' },
   { to: '/front/trial-courses',      label: '體驗課程' },
-  { to: '/front/herbs-encyclopedia', label: '香藥草圖鑑' },
+  { to: '/front/herbs', label: '香藥草圖鑑' },
   { to: '/front/group-accommodation',label: '團體住宿' },
   { to: '/front/venue-rental',       label: '場地租借' },
+  { to: '/front/park-map',            label: '園區地圖' },
 ]
 
 // 目前路徑是否落在「農莊體驗」任一子項

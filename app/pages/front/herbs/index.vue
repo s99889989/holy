@@ -161,13 +161,15 @@ const closeModal = () => { modal.value = null }
                   <span v-for="t in modal.tags" :key="t" class="htag" :class="`htag-${tagColor(t)}`">{{ t }}</span>
                 </div>
                 <div class="herbs-modal-detail-btn-wrap">
-                  <NuxtLink
-                      :to="`/front/herbs/${encodeURIComponent(modal.name)}`"
+                  <a
+                      :href="`/front/herbs/${encodeURIComponent(modal.name)}`"
                       class="herbs-modal-detail-btn"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       @click="closeModal"
                   >
                     🔗 開啟獨立頁面
-                  </NuxtLink>
+                  </a>
                 </div>
               </div>
 
@@ -194,7 +196,6 @@ const closeModal = () => { modal.value = null }
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  transition: all 0.2s;
   border-radius: 0;
   white-space: nowrap;
 }
