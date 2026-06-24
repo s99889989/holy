@@ -1,13 +1,11 @@
 <script setup>
-definePageMeta({ layout: 'front' })
 useSiteHead()
 
 import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { findHerbByName, tagColor } from '~/composables/useHerbsData'
 
 const route  = useRoute()
-const router = useRouter()
 
 const result = computed(() => findHerbByName(decodeURIComponent(route.params.name)))
 const herb         = computed(() => result.value?.herb)
@@ -30,9 +28,9 @@ const sectionLabel = computed(() => result.value?.sectionLabel)
       <div class="hd-hero">
         <div class="hd-hero-img-wrap">
           <img
-            :src="`/images/plant/${sectionKey}/${herb.file}`"
-            :alt="herb.name"
-            class="hd-hero-img"
+              :src="`/images/plant/${sectionKey}/${herb.file}`"
+              :alt="herb.name"
+              class="hd-hero-img"
           />
         </div>
         <div class="hd-hero-overlay">
@@ -45,22 +43,13 @@ const sectionLabel = computed(() => result.value?.sectionLabel)
       <!-- Content -->
       <div class="container hd-content">
 
-        <!-- Breadcrumb -->
-        <nav class="hd-breadcrumb">
-          <NuxtLink to="/front/public">首頁</NuxtLink>
-          <span> › </span>
-          <NuxtLink to="/front/herbs-encyclopedia">香藥草植物圖鑑</NuxtLink>
-          <span> › </span>
-          <span>{{ herb.name }}</span>
-        </nav>
-
         <!-- Tags -->
         <div class="herb-tags mb-4">
           <span
-            v-for="t in herb.tags"
-            :key="t"
-            class="htag"
-            :class="`htag-${tagColor(t)}`"
+              v-for="t in herb.tags"
+              :key="t"
+              class="htag"
+              :class="`htag-${tagColor(t)}`"
           >{{ t }}</span>
         </div>
 
@@ -84,21 +73,11 @@ const sectionLabel = computed(() => result.value?.sectionLabel)
         <section class="hd-effect-section">
           <h2 class="hd-section-title">功效與用途</h2>
           <p
-            v-for="(para, i) in herb.effect"
-            :key="i"
-            class="hd-effect-para"
+              v-for="(para, i) in herb.effect"
+              :key="i"
+              class="hd-effect-para"
           >{{ para }}</p>
         </section>
-
-        <!-- Back button -->
-        <div class="hd-footer">
-          <button class="hd-back-btn" @click="router.back()">
-            ← 返回上一頁
-          </button>
-          <NuxtLink to="/front/herbs-encyclopedia" class="hd-back-link">
-            回到香藥草圖鑑
-          </NuxtLink>
-        </div>
 
       </div>
     </template>
@@ -115,68 +94,68 @@ const sectionLabel = computed(() => result.value?.sectionLabel)
 .hd-hero {
   position: relative;
   width: 100%;
-  height: 360px;
+  height: 460px;
   overflow: hidden;
   background: #edf3ea;
+  margin-top: -1px;
 }
 .hd-hero-img-wrap {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
+  padding: 2rem 1rem 5rem;
 }
 .hd-hero-img {
-  max-height: 340px;
-  max-width: 100%;
+  max-height: 100%;
+  max-width: 85%;
   object-fit: contain;
   filter: drop-shadow(0 8px 24px rgba(0,0,0,0.12));
 }
 .hd-hero-overlay {
   position: absolute;
   bottom: 0; left: 0; right: 0;
-  padding: 1.5rem 2rem;
-  background: linear-gradient(to top, rgba(10,30,15,0.72) 0%, transparent 100%);
+  padding: 2rem 1.5rem 1.25rem;
+  background: linear-gradient(to top, rgba(10,30,15,0.82) 0%, rgba(10,30,15,0.3) 60%, transparent 100%);
 }
 .hd-section-badge {
   display: inline-block;
-  font-size: 0.7rem; background: rgba(255,255,255,0.2);
+  font-size: 0.68rem; background: rgba(255,255,255,0.18);
   color: #d4f0d4; border: 1px solid rgba(255,255,255,0.3);
   padding: 0.15rem 0.6rem; border-radius: 999px;
-  margin-bottom: 0.4rem; font-weight: 500;
+  margin-bottom: 0.35rem; font-weight: 500;
   backdrop-filter: blur(4px);
 }
 .hd-hero-name {
   font-family: 'Noto Serif TC', serif;
-  font-size: 2.2rem; font-weight: 700; color: #fff;
+  font-size: 2rem; font-weight: 700; color: #fff;
   margin: 0 0 0.2rem; text-shadow: 0 2px 8px rgba(0,0,0,0.4);
 }
 .hd-hero-latin {
-  font-size: 0.9rem; color: rgba(255,255,255,0.75);
+  font-size: 0.82rem; color: rgba(255,255,255,0.75);
   font-style: italic; margin: 0;
 }
 
 /* ── Content ── */
 .hd-content {
   max-width: 780px;
-  padding-top: 1.5rem;
+  padding-top: 1.25rem;
   padding-bottom: 3rem;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
 }
-.hd-breadcrumb {
-  font-size: 0.78rem; color: #8a9e84; margin-bottom: 1.25rem;
-}
-.hd-breadcrumb a { color: #3d7a52; text-decoration: none; }
-.hd-breadcrumb a:hover { text-decoration: underline; }
 
 /* ── Meta card ── */
 .hd-meta-card {
   background: #f4f9f2; border-radius: 10px;
-  padding: 1rem 1.25rem; margin-bottom: 2rem;
-  display: flex; flex-direction: column; gap: 0.5rem;
+  padding: 1rem 1.1rem; margin-bottom: 1.75rem;
+  display: flex; flex-direction: column; gap: 0.65rem;
   border-left: 3px solid #3d7a52;
 }
 .hd-meta-row {
-  font-size: 0.85rem; display: flex; gap: 0.75rem; align-items: baseline;
+  font-size: 0.88rem; display: flex; gap: 0.75rem; align-items: baseline;
+  line-height: 1.6;
 }
 .hd-meta-label {
-  font-weight: 600; color: #3d7a52;
+  font-weight: 700; color: #3d7a52;
   min-width: 2.4rem; flex-shrink: 0;
 }
 
@@ -184,34 +163,16 @@ const sectionLabel = computed(() => result.value?.sectionLabel)
 .hd-effect-section { margin-bottom: 2rem; }
 .hd-section-title {
   font-family: 'Noto Serif TC', serif;
-  font-size: 1.05rem; font-weight: 600; color: #1a3d28;
-  margin: 0 0 0.75rem;
+  font-size: 1rem; font-weight: 700; color: #1a3d28;
+  margin: 0 0 0.85rem;
   padding-bottom: 0.4rem; border-bottom: 2px solid #d4e8cd;
 }
 .hd-effect-para {
-  font-size: 0.9rem; line-height: 1.9; color: #3a4e36;
-  margin: 0 0 0.65rem;
+  font-size: 0.92rem; line-height: 1.95; color: #3a4e36;
+  margin: 0 0 0.75rem;
 }
 
-/* ── Footer ── */
-.hd-footer {
-  display: flex; align-items: center; gap: 1rem;
-  padding-top: 1rem; border-top: 1px solid #e8f0eb;
-}
-.hd-back-btn {
-  background: none; border: 1.5px solid #c5d4be;
-  color: #5a6e54; padding: 0.4rem 1rem;
-  border-radius: 999px; font-size: 0.82rem;
-  cursor: pointer; transition: all 0.15s;
-}
-.hd-back-btn:hover { border-color: #3d7a52; color: #3d7a52; }
-.hd-back-link {
-  font-size: 0.82rem; color: #3d7a52;
-  text-decoration: none;
-}
-.hd-back-link:hover { text-decoration: underline; }
-
-/* ── Tags (共用) ── */
+/* ── Tags ── */
 .herb-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .htag { font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-weight: 500; }
 .htag-green   { background: #e8f5e9; color: #2e7d32; }
@@ -234,8 +195,8 @@ const sectionLabel = computed(() => result.value?.sectionLabel)
 .htag-slate   { background: #eceff1; color: #37474f; }
 
 @media (max-width: 600px) {
-  .hd-hero { height: 260px; }
-  .hd-hero-name { font-size: 1.6rem; }
-  .hd-content { padding-top: 1rem; }
+  .hd-hero { height: 420px; }
+  .hd-hero-name { font-size: 1.7rem; }
+  .hd-hero-img { max-width: 90%; }
 }
 </style>
