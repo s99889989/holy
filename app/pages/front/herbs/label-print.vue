@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { herbSections } from '~/composables/useHerbsData'
 
-const BASE_URL = 'https://www.smhealthfarm.com.tw/front/herbs/'
+const BASE_URL = 'https://holyfarm.netlify.app/front/herbs/'
 const PER_PAGE = 8  // 4欄 × 2列
 
 const qty = ref({})
