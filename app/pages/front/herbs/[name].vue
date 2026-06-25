@@ -1,5 +1,5 @@
 <script setup>
-definePageMeta({layout: 'front'})
+
 useSiteHead()
 
 import {computed} from 'vue'
