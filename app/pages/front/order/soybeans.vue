@@ -2,9 +2,9 @@
 definePageMeta({ layout: false })
 useSiteHead({
   title: '豆製品訂購 | 台東聖母健康農莊',
-  description: '聖母健康農莊每週二、四新鮮現做豆漿與豆腐，歡迎線上預訂。',
+  description: '聖母健康農莊每週新鮮現做豆漿與豆腐，歡迎線上預訂。',
   ogTitle: '豆製品訂購 | 台東聖母健康農莊',
-  ogDescription: '聖母健康農莊每週二、四新鮮現做豆漿與豆腐，歡迎線上預訂。',
+  ogDescription: '聖母健康農莊每週新鮮現做豆漿與豆腐，歡迎線上預訂。',
   ogImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
   twitterImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
   ogUrl: 'https://holymotherfarm.netlify.app/front/order/soybeans',
@@ -24,11 +24,31 @@ const GOOGLE_CLIENT_ID = computed(() => commonStore.data.google_client_id)
 
 const customer = computed(() => customerStore.customer)
 
+// ── 營業日設定（動態抓後端，取代寫死的週二／週五）───────────────
+// ISO 星期數字：1=一 2=二 3=三 4=四 5=五 6=六 7=日
+const DOW_LABEL = { 1: '週一', 2: '週二', 3: '週三', 4: '週四', 5: '週五', 6: '週六', 7: '週日' }
+const DOW_CODE  = { 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat', 7: 'sun' }
+
+const businessDays = ref([2, 5]) // 預設值（後端還沒回來前先顯示），實際以後端設定為準
+
+async function fetchBusinessDays() {
+  try {
+    const res  = await fetch(`${SOYBEAN_BASE.value}/settings/business-days`)
+    const data = await res.json()
+    if (Array.isArray(data.businessDays) && data.businessDays.length > 0) {
+      businessDays.value = data.businessDays
+    }
+  } catch {}
+}
+
 // ── 日期工具 ────────────────────────────────────────────────────
+// dow 為 ISO 星期數字（1=一...7=日）；JS 的 Date.getDay() 是 0=日...6=六，
+// 剛好 1~6 一致，只有星期日（ISO=7）要轉成 JS 的 0，故用 dow % 7。
 function getNext(dow) {
   const now = new Date()
   const base = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const diff = ((dow - base.getDay() + 7) % 7) || 7
+  const jsDow = dow % 7
+  const diff = ((jsDow - base.getDay() + 7) % 7) || 7
   const n = new Date(base)
   n.setDate(base.getDate() + diff)
   return n
@@ -38,25 +58,47 @@ function toDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-const tueDateStr  = fmt(getNext(2))
-const friDateStr  = fmt(getNext(5))
-const tueDateKey  = toDateStr(getNext(2))
-const friDateKey  = toDateStr(getNext(5))
+// 依目前營業日設定，動態算出可選的取貨日清單（每筆含代碼／中文標籤／下次日期）
+const pickupDayOptions = computed(() =>
+    businessDays.value.map((dow) => {
+      const date = getNext(dow)
+      return {
+        dow,
+        code:    DOW_CODE[dow] || 'tue',
+        label:   DOW_LABEL[dow] || '',
+        dateStr: fmt(date),
+        dateKey: toDateStr(date),
+      }
+    })
+)
+
+// 給頁首文案用，例如「每週二、四新鮮現做」
+const businessDaysLabel = computed(() =>
+    pickupDayOptions.value.map(o => o.label.replace('週', '')).join('、')
+)
 
 // ── 休息日 ──────────────────────────────────────────────────────
 const closedDates = ref([])
 
-const tueClosed = computed(() => closedDates.value.includes(tueDateKey))
-const friClosed = computed(() => closedDates.value.includes(friDateKey))
+const closedMap = computed(() => {
+  const m = {}
+  for (const opt of pickupDayOptions.value) m[opt.code] = closedDates.value.includes(opt.dateKey)
+  return m
+})
+const allDaysClosed = computed(() =>
+    pickupDayOptions.value.length > 0 && pickupDayOptions.value.every(o => closedMap.value[o.code])
+)
 
 async function fetchClosedDates() {
   try {
     const res  = await fetch(`${SOYBEAN_BASE.value}/admin/settings/closed-dates`)
     const data = await res.json()
     closedDates.value = Array.isArray(data.closedDates) ? data.closedDates : []
-    // 若預設選的取貨日是休息日，自動切換到另一天（如果另一天不是休息日）
-    if (selDay.value === 'tue' && tueClosed.value && !friClosed.value) selDay.value = 'fri'
-    if (selDay.value === 'fri' && friClosed.value && !tueClosed.value) selDay.value = 'tue'
+    // 若目前選的取貨日是休息日，自動切換到第一個非休息日的選項
+    if (closedMap.value[selDay.value]) {
+      const alt = pickupDayOptions.value.find(o => !closedMap.value[o.code])
+      if (alt) selDay.value = alt.code
+    }
   } catch {}
 }
 
@@ -180,7 +222,10 @@ function pickName(n) { name.value = n; showSuggest.value = false }
 
 // ── 摘要計算 ────────────────────────────────────────────────────
 const hasOrder   = computed(() => soymilkQty.value > 0 || tofuQty.value > 0)
-const dayLabel   = computed(() => selDay.value === 'tue' ? `週二 ${tueDateStr}` : `週五 ${friDateStr}`)
+const dayLabel   = computed(() => {
+  const opt = pickupDayOptions.value.find(o => o.code === selDay.value)
+  return opt ? `${opt.label} ${opt.dateStr}` : ''
+})
 const totalPrice = computed(() => soymilkQty.value * 50 + tofuQty.value * 50)
 
 // ── 送出 ────────────────────────────────────────────────────────
@@ -260,6 +305,8 @@ function resetForm() {
 // ── 初始化 ──────────────────────────────────────────────────────
 onMounted(async () => {
   loadKnownNames()
+  await fetchBusinessDays()
+  selDay.value = pickupDayOptions.value[0]?.code || 'tue'
   fetchClosedDates()
 
   // 嘗試取得已登入客戶
@@ -301,7 +348,7 @@ onMounted(async () => {
         </NuxtLink>
         <div class="sb-header__text">
           <h1 class="sb-header__title">豆製品訂購</h1>
-          <p class="sb-header__sub">每週二、四新鮮現做・豆漿與豆腐</p>
+          <p class="sb-header__sub">每週{{ businessDaysLabel }}新鮮現做・豆漿與豆腐</p>
         </div>
 
         <!-- 登入區塊 -->
@@ -359,26 +406,19 @@ onMounted(async () => {
 
       <!-- 取貨日 tabs -->
       <div class="sb-day-tabs">
-        <button class="sb-day-tab"
-                :class="{ active: selDay === 'tue', closed: tueClosed }"
-                :disabled="tueClosed"
-                @click="!tueClosed && (selDay = 'tue')">
-          <span class="sb-day-tab__label">週二</span>
-          <span class="sb-day-tab__date">{{ tueDateStr }}</span>
-          <span v-if="tueClosed" class="sb-day-tab__closed">休息日</span>
-        </button>
-        <button class="sb-day-tab"
-                :class="{ active: selDay === 'fri', closed: friClosed }"
-                :disabled="friClosed"
-                @click="!friClosed && (selDay = 'fri')">
-          <span class="sb-day-tab__label">週五</span>
-          <span class="sb-day-tab__date">{{ friDateStr }}</span>
-          <span v-if="friClosed" class="sb-day-tab__closed">休息日</span>
+        <button v-for="opt in pickupDayOptions" :key="opt.code"
+                class="sb-day-tab"
+                :class="{ active: selDay === opt.code, closed: closedMap[opt.code] }"
+                :disabled="closedMap[opt.code]"
+                @click="!closedMap[opt.code] && (selDay = opt.code)">
+          <span class="sb-day-tab__label">{{ opt.label }}</span>
+          <span class="sb-day-tab__date">{{ opt.dateStr }}</span>
+          <span v-if="closedMap[opt.code]" class="sb-day-tab__closed">休息日</span>
         </button>
       </div>
 
-      <!-- 雙休公告 -->
-      <div v-if="tueClosed && friClosed" class="sb-notice sb-notice--warn" style="margin-bottom:1rem">
+      <!-- 全休公告 -->
+      <div v-if="allDaysClosed" class="sb-notice sb-notice--warn" style="margin-bottom:1rem">
         <svg xmlns="http://www.w3.org/2000/svg" class="sb-notice__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span>本週豆製品暫停訂購，造成不便請見諒。</span>
       </div>
@@ -495,7 +535,7 @@ onMounted(async () => {
       </Transition>
 
       <!-- 送出 -->
-      <button class="sb-submit" :disabled="submitting || (selDay === 'tue' && tueClosed) || (selDay === 'fri' && friClosed)" @click="doSubmit">
+      <button class="sb-submit" :disabled="submitting || closedMap[selDay]" @click="doSubmit">
         <span v-if="submitting" class="sb-spinner"></span>
         {{ submitting ? '送出中…' : '確認送出訂單' }}
       </button>
