@@ -60,16 +60,18 @@ function toDateStr(d) {
 
 // 依目前營業日設定，動態算出可選的取貨日清單（每筆含代碼／中文標籤／下次日期）
 const pickupDayOptions = computed(() =>
-    businessDays.value.map((dow) => {
-      const date = getNext(dow)
-      return {
-        dow,
-        code:    DOW_CODE[dow] || 'tue',
-        label:   DOW_LABEL[dow] || '',
-        dateStr: fmt(date),
-        dateKey: toDateStr(date),
-      }
-    })
+        businessDays.value
+                .map((dow) => {
+                  const date = getNext(dow)
+                  return {
+                    dow,
+                    code:    DOW_CODE[dow] || 'tue',
+                    label:   DOW_LABEL[dow] || '',
+                    dateStr: fmt(date),
+                    dateKey: toDateStr(date),
+                  }
+                })
+                .sort((a, b) => a.dateKey.localeCompare(b.dateKey))  // ← 依日期由近到遠排序
 )
 
 // 給頁首文案用，例如「每週二、四新鮮現做」
