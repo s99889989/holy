@@ -60,18 +60,18 @@ function toDateStr(d) {
 
 // 依目前營業日設定，動態算出可選的取貨日清單（每筆含代碼／中文標籤／下次日期）
 const pickupDayOptions = computed(() =>
-        businessDays.value
-                .map((dow) => {
-                  const date = getNext(dow)
-                  return {
-                    dow,
-                    code:    DOW_CODE[dow] || 'tue',
-                    label:   DOW_LABEL[dow] || '',
-                    dateStr: fmt(date),
-                    dateKey: toDateStr(date),
-                  }
-                })
-                .sort((a, b) => a.dateKey.localeCompare(b.dateKey))  // ← 依日期由近到遠排序
+    businessDays.value
+        .map((dow) => {
+          const date = getNext(dow)
+          return {
+            dow,
+            code:    DOW_CODE[dow] || 'tue',
+            label:   DOW_LABEL[dow] || '',
+            dateStr: fmt(date),
+            dateKey: toDateStr(date),
+          }
+        })
+        .sort((a, b) => a.dateKey.localeCompare(b.dateKey))  // ← 依日期由近到遠排序
 )
 
 // 給頁首文案用，例如「每週二、四新鮮現做」
@@ -96,21 +96,61 @@ async function fetchClosedDates() {
     const res  = await fetch(`${SOYBEAN_BASE.value}/admin/settings/closed-dates`)
     const data = await res.json()
     closedDates.value = Array.isArray(data.closedDates) ? data.closedDates : []
-    // 若目前選的取貨日是休息日，自動切換到第一個非休息日的選項
-    if (closedMap.value[selDay.value]) {
+    // 若目前勾選的取貨日變成休息日，自動從已選清單中移除
+    selDays.value = selDays.value.filter(code => !closedMap.value[code])
+    if (selDays.value.length === 0) {
       const alt = pickupDayOptions.value.find(o => !closedMap.value[o.code])
-      if (alt) selDay.value = alt.code
+      if (alt) { selDays.value = [alt.code]; ensureDayQty(alt.code) }
     }
   } catch {}
 }
 
 // ── 狀態 ────────────────────────────────────────────────────────
-const selDay     = ref('tue')
-const name       = ref('')
-const contact    = ref('')
-const remark     = ref('')
-const soymilkQty = ref(0)
-const tofuQty    = ref(0)
+// selDays：目前勾選的取貨日代碼（可複選，例如 ['tue', 'fri']）
+// dayQty：每個取貨日各自的數量，例如 { tue: { soymilkQty: 2, tofuQty: 0 }, fri: { soymilkQty: 0, tofuQty: 3 } }
+const selDays = ref([])
+const dayQty  = ref({})
+const name    = ref('')
+const contact = ref('')
+const remark  = ref('')
+
+function ensureDayQty(code) {
+  if (!dayQty.value[code]) dayQty.value[code] = { soymilkQty: 0, tofuQty: 0 }
+}
+function toggleDay(code) {
+  if (closedMap.value[code]) return
+  const idx = selDays.value.indexOf(code)
+  if (idx >= 0) {
+    selDays.value.splice(idx, 1)
+  } else {
+    selDays.value.push(code)
+    ensureDayQty(code)
+  }
+}
+function adjDaySoy(code, delta)  {
+  ensureDayQty(code)
+  dayQty.value[code].soymilkQty = Math.max(0, dayQty.value[code].soymilkQty + delta)
+}
+function adjDayTofu(code, delta) {
+  ensureDayQty(code)
+  dayQty.value[code].tofuQty = Math.max(0, dayQty.value[code].tofuQty + delta)
+}
+// 把某一天目前的數量，套用到其他所有已勾選的時段
+function applyToAllDays(sourceCode) {
+  ensureDayQty(sourceCode)
+  const src = dayQty.value[sourceCode]
+  for (const code of selDays.value) {
+    if (code === sourceCode) continue
+    ensureDayQty(code)
+    dayQty.value[code].soymilkQty = src.soymilkQty
+    dayQty.value[code].tofuQty    = src.tofuQty
+  }
+}
+// 該取貨日的中文標籤＋日期，用於摘要與成功訊息
+function labelFor(code) {
+  const opt = pickupDayOptions.value.find(o => o.code === code)
+  return opt ? `${opt.label} ${opt.dateStr}` : code
+}
 
 // 名稱建議
 const knownNames  = ref([])
@@ -210,8 +250,6 @@ function loadKnownNames() {
   } catch {}
 }
 
-function adjSoy(delta)  { soymilkQty.value = Math.max(0, soymilkQty.value + delta) }
-function adjTofu(delta) { tofuQty.value    = Math.max(0, tofuQty.value + delta) }
 
 // ── 名稱建議 ────────────────────────────────────────────────────
 function onNameInput(v) {
@@ -223,12 +261,17 @@ function onNameInput(v) {
 function pickName(n) { name.value = n; showSuggest.value = false }
 
 // ── 摘要計算 ────────────────────────────────────────────────────
-const hasOrder   = computed(() => soymilkQty.value > 0 || tofuQty.value > 0)
-const dayLabel   = computed(() => {
-  const opt = pickupDayOptions.value.find(o => o.code === selDay.value)
-  return opt ? `${opt.label} ${opt.dateStr}` : ''
-})
-const totalPrice = computed(() => soymilkQty.value * 50 + tofuQty.value * 50)
+
+// 有數量的已選時段（用於摘要／送出，過濾掉勾了但沒填數量的天）
+const activeDayEntries = computed(() =>
+    selDays.value
+        .map(code => ({ code, qty: dayQty.value[code] || { soymilkQty: 0, tofuQty: 0 } }))
+        .filter(d => d.qty.soymilkQty > 0 || d.qty.tofuQty > 0)
+)
+const totalPrice = computed(() =>
+    activeDayEntries.value.reduce((sum, d) => sum + (d.qty.soymilkQty + d.qty.tofuQty) * 50, 0)
+)
+const hasOrder = computed(() => activeDayEntries.value.length > 0)
 
 // ── 送出 ────────────────────────────────────────────────────────
 async function doSubmit() {
@@ -252,18 +295,20 @@ async function doSubmit() {
   saveLocal()
 
   const payload = {
-    customerId:  customer.value?.id ?? '',
-    name:        name.value.trim(),
-    contact:     contact.value.trim(),
-    pickupDay:   selDay.value,
-    soymilkQty:  soymilkQty.value,
-    tofuQty:     tofuQty.value,
-    remark:      remark.value.trim(),
+    customerId: customer.value?.id ?? '',
+    name:       name.value.trim(),
+    contact:    contact.value.trim(),
+    remark:     remark.value.trim(),
+    items: activeDayEntries.value.map(d => ({
+      pickupDay:  d.code,
+      soymilkQty: d.qty.soymilkQty,
+      tofuQty:    d.qty.tofuQty,
+    })),
   }
 
   submitting.value = true
   try {
-    const res  = await fetch(`${SOYBEAN_BASE.value}/order`, {
+    const res  = await fetch(`${SOYBEAN_BASE.value}/order/batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -275,11 +320,15 @@ async function doSubmit() {
       return
     }
 
-    let msg = `訂購人：${name.value}　聯絡：${contact.value}　取貨日：${dayLabel.value}\n\n`
-    if (soymilkQty.value) msg += `豆漿 800cc × ${soymilkQty.value} 袋\n`
-    if (tofuQty.value)    msg += `豆腐 × ${tofuQty.value} 塊\n`
-    if (remark.value.trim()) msg += `\n備註：${remark.value.trim()}`
-    msg += `\n\n合計：$${totalPrice.value}`
+    let msg = `訂購人：${name.value}　聯絡：${contact.value}\n\n`
+    for (const d of activeDayEntries.value) {
+      msg += `【${labelFor(d.code)}】\n`
+      if (d.qty.soymilkQty) msg += `豆漿 800cc × ${d.qty.soymilkQty} 袋\n`
+      if (d.qty.tofuQty)    msg += `豆腐 × ${d.qty.tofuQty} 塊\n`
+      msg += '\n'
+    }
+    if (remark.value.trim()) msg += `備註：${remark.value.trim()}\n\n`
+    msg += `合計：$${totalPrice.value}`
 
     successMsg.value   = msg
     successModal.value = true
@@ -300,7 +349,10 @@ async function doSubmit() {
 
 function resetForm() {
   name.value = ''; contact.value = ''; remark.value = ''
-  soymilkQty.value = 0; tofuQty.value = 0
+  dayQty.value = {}
+  const firstCode = pickupDayOptions.value[0]?.code || 'tue'
+  selDays.value = [firstCode]
+  ensureDayQty(firstCode)
   successModal.value = false
 }
 
@@ -308,7 +360,9 @@ function resetForm() {
 onMounted(async () => {
   loadKnownNames()
   await fetchBusinessDays()
-  selDay.value = pickupDayOptions.value[0]?.code || 'tue'
+  const firstCode = pickupDayOptions.value[0]?.code || 'tue'
+  selDays.value = [firstCode]
+  ensureDayQty(firstCode)
   fetchClosedDates()
 
   // 嘗試取得已登入客戶
@@ -406,13 +460,15 @@ onMounted(async () => {
         豆子需提前一天浸泡，請盡早完成訂購，以便我們準備。
       </div>
 
-      <!-- 取貨日 tabs -->
+      <!-- 取貨日 tabs（可複選：一次勾選多個時段） -->
+      <p class="sb-day-tabs__hint">可勾選多個取貨日，分開設定各自的數量</p>
       <div class="sb-day-tabs">
         <button v-for="opt in pickupDayOptions" :key="opt.code"
                 class="sb-day-tab"
-                :class="{ active: selDay === opt.code, closed: closedMap[opt.code] }"
+                :class="{ active: selDays.includes(opt.code), closed: closedMap[opt.code] }"
                 :disabled="closedMap[opt.code]"
-                @click="!closedMap[opt.code] && (selDay = opt.code)">
+                @click="toggleDay(opt.code)">
+          <span v-if="selDays.includes(opt.code)" class="sb-day-tab__check">✓</span>
           <span class="sb-day-tab__label">{{ opt.label }}</span>
           <span class="sb-day-tab__date">{{ opt.dateStr }}</span>
           <span v-if="closedMap[opt.code]" class="sb-day-tab__closed">休息日</span>
@@ -462,11 +518,15 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 豆漿卡片 -->
-      <div class="sb-card">
+      <!-- 各已勾選時段的訂購卡片 -->
+      <div v-for="code in selDays" :key="code" class="sb-card sb-card--day">
         <div class="sb-card__title">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
-          豆漿
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+          {{ labelFor(code) }}
+          <button v-if="selDays.length > 1"
+                  class="sb-day-apply-btn"
+                  type="button"
+                  @click="applyToAllDays(code)">套用到全部</button>
         </div>
         <div class="sb-order-rows">
           <div class="sb-order-row">
@@ -475,33 +535,22 @@ onMounted(async () => {
               <span class="sb-order-row__sub">$50／袋</span>
             </div>
             <div class="sb-qty-ctrl">
-              <button @click="adjSoy(-1)">−</button>
-              <input type="number" :value="soymilkQty" min="0"
-                     @input="soymilkQty = Math.max(0, parseInt($event.target.value) || 0)" />
-              <button @click="adjSoy(1)">+</button>
+              <button @click="adjDaySoy(code, -1)">−</button>
+              <input type="number" :value="dayQty[code]?.soymilkQty ?? 0" min="0"
+                     @input="ensureDayQty(code); dayQty[code].soymilkQty = Math.max(0, parseInt($event.target.value) || 0)" />
+              <button @click="adjDaySoy(code, 1)">+</button>
             </div>
           </div>
-        </div>
-        <p class="sb-price-note">$50／袋（800cc）</p>
-      </div>
-
-      <!-- 豆腐卡片 -->
-      <div class="sb-card">
-        <div class="sb-card__title">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-          豆腐
-        </div>
-        <div class="sb-order-rows">
           <div class="sb-order-row">
             <div class="sb-order-row__label">
               豆腐
               <span class="sb-order-row__sub">$50／塊</span>
             </div>
             <div class="sb-qty-ctrl">
-              <button @click="adjTofu(-1)">−</button>
-              <input type="number" :value="tofuQty" min="0"
-                     @input="tofuQty = Math.max(0, parseInt($event.target.value) || 0)" />
-              <button @click="adjTofu(1)">+</button>
+              <button @click="adjDayTofu(code, -1)">−</button>
+              <input type="number" :value="dayQty[code]?.tofuQty ?? 0" min="0"
+                     @input="ensureDayQty(code); dayQty[code].tofuQty = Math.max(0, parseInt($event.target.value) || 0)" />
+              <button @click="adjDayTofu(code, 1)">+</button>
             </div>
           </div>
         </div>
@@ -509,21 +558,22 @@ onMounted(async () => {
 
       <!-- 摘要 -->
       <div v-if="hasOrder" class="sb-summary">
-        <div v-if="soymilkQty" class="sb-summary__row">
-          <span>豆漿 800cc × {{ soymilkQty }} 袋</span>
-          <span>${{ soymilkQty * 50 }}</span>
-        </div>
-        <div v-if="tofuQty" class="sb-summary__row">
-          <span>豆腐 × {{ tofuQty }} 塊</span>
-          <span>${{ tofuQty * 50 }}</span>
-        </div>
+        <template v-for="d in activeDayEntries" :key="d.code">
+          <div class="sb-summary__row sb-summary__row--day">
+            <span>{{ labelFor(d.code) }}</span>
+          </div>
+          <div v-if="d.qty.soymilkQty" class="sb-summary__row">
+            <span>　豆漿 800cc × {{ d.qty.soymilkQty }} 袋</span>
+            <span>${{ d.qty.soymilkQty * 50 }}</span>
+          </div>
+          <div v-if="d.qty.tofuQty" class="sb-summary__row">
+            <span>　豆腐 × {{ d.qty.tofuQty }} 塊</span>
+            <span>${{ d.qty.tofuQty * 50 }}</span>
+          </div>
+        </template>
         <div class="sb-summary__row sb-summary__row--total">
           <span>合計</span>
           <span>${{ totalPrice }}</span>
-        </div>
-        <div class="sb-summary__row">
-          <span>取貨日</span>
-          <span>{{ dayLabel }}</span>
         </div>
       </div>
 
@@ -537,7 +587,7 @@ onMounted(async () => {
       </Transition>
 
       <!-- 送出 -->
-      <button class="sb-submit" :disabled="submitting || closedMap[selDay]" @click="doSubmit">
+      <button class="sb-submit" :disabled="submitting || selDays.length === 0 || selDays.some(c => closedMap[c])" @click="doSubmit">
         <span v-if="submitting" class="sb-spinner"></span>
         {{ submitting ? '送出中…' : '確認送出訂單' }}
       </button>
@@ -726,14 +776,20 @@ onMounted(async () => {
 .sb-notice__icon { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
 
 /* ── Day Tabs ── */
-.sb-day-tabs { display: flex; gap: 10px; margin-bottom: 1.25rem; }
+.sb-day-tabs__hint { font-size: 12px; color: #8a9e84; margin: 0 0 0.5rem; }
+.sb-day-tabs { display: flex; gap: 10px; margin-bottom: 1.25rem; flex-wrap: wrap; }
 .sb-day-tab {
-  flex: 1; padding: 10px;
+  flex: 1; min-width: 84px; padding: 10px;
   border: 1.5px solid #d0daca; border-radius: 10px;
   background: #fff; cursor: pointer; text-align: center;
   transition: all .15s; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  position: relative;
 }
 .sb-day-tab.active { border-color: #3d7a52; background: #f0f9f4; }
+.sb-day-tab__check {
+  position: absolute; top: 6px; right: 8px;
+  font-size: 12px; font-weight: 700; color: #3d7a52;
+}
 .sb-day-tab__label { font-size: 15px; font-weight: 500; color: #2a2e25; }
 .sb-day-tab__date  { font-size: 11px; color: #8a9e84; }
 .sb-day-tab.active .sb-day-tab__label { color: #1a5c3a; }
@@ -759,6 +815,15 @@ onMounted(async () => {
   margin-bottom: 1rem; font-family: 'Noto Serif TC', serif;
 }
 .sb-card__title svg { width: 18px; height: 18px; color: #3d7a52; flex-shrink: 0; }
+.sb-card--day .sb-card__title { justify-content: space-between; }
+.sb-day-apply-btn {
+  margin-left: auto; font-family: inherit;
+  font-size: 11px; font-weight: 500; color: #3d7a52;
+  background: #f0f9f4; border: 1px solid #b8d8c4;
+  border-radius: 20px; padding: 4px 10px; cursor: pointer;
+  transition: background 0.15s;
+}
+.sb-day-apply-btn:hover { background: #e0f2e6; }
 
 /* ── Field ── */
 .sb-field { margin-bottom: 1rem; }
@@ -829,6 +894,11 @@ onMounted(async () => {
   font-size: 14px; font-weight: 600; color: #1a3d28;
   border-top: 1px solid #dce8d8; margin-top: 6px; padding-top: 8px;
 }
+.sb-summary__row--day {
+  font-size: 12.5px; font-weight: 600; color: #3d7a52;
+  padding-top: 8px;
+}
+.sb-summary__row--day:first-child { padding-top: 0; }
 
 /* ── Error ── */
 .sb-error {
