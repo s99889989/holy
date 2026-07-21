@@ -44,13 +44,14 @@ async function fetchBusinessDays() {
 // ── 日期工具 ────────────────────────────────────────────────────
 // dow 為 ISO 星期數字（1=一...7=日）；JS 的 Date.getDay() 是 0=日...6=六，
 // 剛好 1~6 一致，只有星期日（ISO=7）要轉成 JS 的 0，故用 dow % 7。
-function getNext(dow) {
+// offsetWeeks：再往後推幾週（0＝最近的一次，1＝下週，2＝下下週...）
+function getNext(dow, offsetWeeks = 0) {
   const now = new Date()
   const base = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const jsDow = dow % 7
   const diff = ((jsDow - base.getDay() + 7) % 7) || 7
   const n = new Date(base)
-  n.setDate(base.getDate() + diff)
+  n.setDate(base.getDate() + diff + offsetWeeks * 7)
   return n
 }
 function fmt(d) { return `${d.getMonth() + 1}月${d.getDate()}日` }
@@ -58,11 +59,21 @@ function toDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-// 依目前營業日設定，動態算出可選的取貨日清單（每筆含代碼／中文標籤／下次日期）
+// 取貨「週次」：0＝最近一次，1＝下週，2＝下下週...，最多往後推 MAX_WEEK_OFFSET 週（約兩個月）
+const MAX_WEEK_OFFSET = 8
+const weekOffset = ref(0)
+const weekOffsetLabel = computed(() => {
+  const presetLabels = ['本週', '下週', '下下週']
+  if (weekOffset.value < presetLabels.length) return presetLabels[weekOffset.value]
+  const opt = pickupDayOptions.value[0]
+  return opt ? `${opt.dateStr} 那週` : `第 ${weekOffset.value + 1} 週`
+})
+
+// 依目前營業日設定＋選擇的週次，動態算出可選的取貨日清單（每筆含代碼／中文標籤／日期）
 const pickupDayOptions = computed(() =>
     businessDays.value
         .map((dow) => {
-          const date = getNext(dow)
+          const date = getNext(dow, weekOffset.value)
           return {
             dow,
             code:    DOW_CODE[dow] || 'tue',
@@ -74,17 +85,18 @@ const pickupDayOptions = computed(() =>
         .sort((a, b) => a.dateKey.localeCompare(b.dateKey))  // ← 依日期由近到遠排序
 )
 
-// 給頁首文案用，例如「每週二、四新鮮現做」
+// 給頁首文案用，例如「每週二、四新鮮現做」（跟週次無關，只看星期幾）
 const businessDaysLabel = computed(() =>
-    pickupDayOptions.value.map(o => o.label.replace('週', '')).join('、')
+    businessDays.value.map(dow => (DOW_LABEL[dow] || '').replace('週', '')).join('、')
 )
 
 // ── 休息日 ──────────────────────────────────────────────────────
 const closedDates = ref([])
+function isDateClosed(dateKey) { return closedDates.value.includes(dateKey) }
 
 const closedMap = computed(() => {
   const m = {}
-  for (const opt of pickupDayOptions.value) m[opt.code] = closedDates.value.includes(opt.dateKey)
+  for (const opt of pickupDayOptions.value) m[opt.code] = isDateClosed(opt.dateKey)
   return m
 })
 const allDaysClosed = computed(() =>
@@ -96,60 +108,125 @@ async function fetchClosedDates() {
     const res  = await fetch(`${SOYBEAN_BASE.value}/admin/settings/closed-dates`)
     const data = await res.json()
     closedDates.value = Array.isArray(data.closedDates) ? data.closedDates : []
-    // 若目前勾選的取貨日變成休息日，自動從已選清單中移除
-    selDays.value = selDays.value.filter(code => !closedMap.value[code])
-    if (selDays.value.length === 0) {
-      const alt = pickupDayOptions.value.find(o => !closedMap.value[o.code])
-      if (alt) { selDays.value = [alt.code]; ensureDayQty(alt.code) }
+    // 若已選的日期變成休息日，自動從已選清單中移除
+    selDates.value = selDates.value.filter(dateKey => !isDateClosed(dateKey))
+    if (selDates.value.length === 0) {
+      const alt = pickupDayOptions.value.find(o => !isDateClosed(o.dateKey))
+      if (alt) { selDates.value = [alt.dateKey]; ensureDateQty(alt.dateKey) }
     }
   } catch {}
 }
 
 // ── 狀態 ────────────────────────────────────────────────────────
-// selDays：目前勾選的取貨日代碼（可複選，例如 ['tue', 'fri']）
-// dayQty：每個取貨日各自的數量，例如 { tue: { soymilkQty: 2, tofuQty: 0 }, fri: { soymilkQty: 0, tofuQty: 3 } }
-const selDays = ref([])
-const dayQty  = ref({})
-const name    = ref('')
-const contact = ref('')
-const remark  = ref('')
+// selDates：目前已選的取貨「實際日期」（YYYY-MM-DD，可複選，例如同一星期跨多週也各自獨立）
+// dateQty：每個日期各自的數量，例如 { '2026-08-04': { soymilkQty: 2, tofuQty: 0 }, ... }
+const selDates = ref([])
+const dateQty  = ref({})
+const name     = ref('')
+const contact  = ref('')
+const remark   = ref('')
 
-function ensureDayQty(code) {
-  if (!dayQty.value[code]) dayQty.value[code] = { soymilkQty: 0, tofuQty: 0 }
+// 依日期字串（YYYY-MM-DD）反推星期標籤／代碼，用於整月加入、成功訊息等場合
+function dateInfo(dateKey) {
+  const d = new Date(dateKey + 'T00:00:00')
+  const jsDow = d.getDay()
+  const dow   = jsDow === 0 ? 7 : jsDow
+  return { dateKey, dow, code: DOW_CODE[dow] || 'tue', label: DOW_LABEL[dow] || '', dateStr: fmt(d) }
 }
-function toggleDay(code) {
-  if (closedMap.value[code]) return
-  const idx = selDays.value.indexOf(code)
+
+// 已選日期由近到遠排序後的清單，畫面顯示用
+const sortedSelDates = computed(() => [...selDates.value].sort())
+
+function ensureDateQty(dateKey) {
+  if (!dateQty.value[dateKey]) dateQty.value[dateKey] = { soymilkQty: 0, tofuQty: 0 }
+}
+function toggleDate(dateKey) {
+  if (isDateClosed(dateKey)) return
+  const idx = selDates.value.indexOf(dateKey)
   if (idx >= 0) {
-    selDays.value.splice(idx, 1)
+    selDates.value.splice(idx, 1)
   } else {
-    selDays.value.push(code)
-    ensureDayQty(code)
+    selDates.value.push(dateKey)
+    ensureDateQty(dateKey)
   }
 }
-function adjDaySoy(code, delta)  {
-  ensureDayQty(code)
-  dayQty.value[code].soymilkQty = Math.max(0, dayQty.value[code].soymilkQty + delta)
+// 從已選清單中移除單一天（例如整月套用後，想拿掉其中某幾天）
+function removeDate(dateKey) {
+  const idx = selDates.value.indexOf(dateKey)
+  if (idx >= 0) selDates.value.splice(idx, 1)
+  delete dateQty.value[dateKey]
 }
-function adjDayTofu(code, delta) {
-  ensureDayQty(code)
-  dayQty.value[code].tofuQty = Math.max(0, dayQty.value[code].tofuQty + delta)
+function adjDateSoy(dateKey, delta)  {
+  ensureDateQty(dateKey)
+  dateQty.value[dateKey].soymilkQty = Math.max(0, dateQty.value[dateKey].soymilkQty + delta)
 }
-// 把某一天目前的數量，套用到其他所有已勾選的時段
-function applyToAllDays(sourceCode) {
-  ensureDayQty(sourceCode)
-  const src = dayQty.value[sourceCode]
-  for (const code of selDays.value) {
-    if (code === sourceCode) continue
-    ensureDayQty(code)
-    dayQty.value[code].soymilkQty = src.soymilkQty
-    dayQty.value[code].tofuQty    = src.tofuQty
+function adjDateTofu(dateKey, delta) {
+  ensureDateQty(dateKey)
+  dateQty.value[dateKey].tofuQty = Math.max(0, dateQty.value[dateKey].tofuQty + delta)
+}
+// 把某一天目前的數量，套用到其他所有已勾選的日期
+function applyToAllDates(sourceKey) {
+  ensureDateQty(sourceKey)
+  const src = dateQty.value[sourceKey]
+  for (const dateKey of selDates.value) {
+    if (dateKey === sourceKey) continue
+    ensureDateQty(dateKey)
+    dateQty.value[dateKey].soymilkQty = src.soymilkQty
+    dateQty.value[dateKey].tofuQty    = src.tofuQty
   }
 }
-// 該取貨日的中文標籤＋日期，用於摘要與成功訊息
-function labelFor(code) {
-  const opt = pickupDayOptions.value.find(o => o.code === code)
-  return opt ? `${opt.label} ${opt.dateStr}` : code
+// 該日期的中文標籤＋日期，用於摘要與成功訊息
+function labelFor(dateKey) {
+  const info = dateInfo(dateKey)
+  return `${info.label} ${info.dateStr}`
+}
+
+// ── 包月：直接選擇月份，一次加入該月所有可訂購的日期 ─────────────
+const packageMonthOptions = computed(() => {
+  const opts = []
+  const now = new Date()
+  for (let i = 0; i < 4; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+    opts.push({
+      val:   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`,
+    })
+  }
+  return opts
+})
+const packageMonth = ref(packageMonthOptions.value[0]?.val || '')
+// 「整月訂購」要套用到每一天的數量
+const packageSoyQty  = ref(1)
+const packageTofuQty = ref(0)
+function adjPackageSoy(delta)  { packageSoyQty.value  = Math.max(0, packageSoyQty.value + delta) }
+function adjPackageTofu(delta) { packageTofuQty.value = Math.max(0, packageTofuQty.value + delta) }
+
+function applyMonthPackage() {
+  if (!packageMonth.value) return
+  if (packageSoyQty.value === 0 && packageTofuQty.value === 0) {
+    alert('請先填寫每次要訂的豆漿或豆腐數量')
+    return
+  }
+  const [y, m] = packageMonth.value.split('-').map(Number)
+  const daysInMonth = new Date(y, m, 0).getDate()
+  const todayKey = toDateStr(new Date())
+  let addedCount = 0
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(y, m - 1, day)
+    const dateKey = toDateStr(d)
+    if (dateKey < todayKey) continue // 不加入已經過去的日期
+    const jsDow = d.getDay()
+    const dow   = jsDow === 0 ? 7 : jsDow
+    if (!businessDays.value.includes(dow)) continue // 不是營業日（星期幾）
+    if (isDateClosed(dateKey)) continue             // 該天被設為休息日
+    if (!selDates.value.includes(dateKey)) selDates.value.push(dateKey)
+    // 直接把設定的數量套用到這一天（該月已選過的天數也會一併同步成這個數量）
+    dateQty.value[dateKey] = { soymilkQty: packageSoyQty.value, tofuQty: packageTofuQty.value }
+    addedCount++
+  }
+  if (addedCount === 0) {
+    alert('這個月沒有可以加入的取貨日（可能都已過期，或該月尚無營業日設定）')
+  }
 }
 
 // 名稱建議
@@ -262,10 +339,10 @@ function pickName(n) { name.value = n; showSuggest.value = false }
 
 // ── 摘要計算 ────────────────────────────────────────────────────
 
-// 有數量的已選時段（用於摘要／送出，過濾掉勾了但沒填數量的天）
+// 有數量的已選日期（用於摘要／送出，過濾掉勾了但沒填數量的天；已依日期排序）
 const activeDayEntries = computed(() =>
-    selDays.value
-        .map(code => ({ code, qty: dayQty.value[code] || { soymilkQty: 0, tofuQty: 0 } }))
+    sortedSelDates.value
+        .map(dateKey => ({ dateKey, qty: dateQty.value[dateKey] || { soymilkQty: 0, tofuQty: 0 } }))
         .filter(d => d.qty.soymilkQty > 0 || d.qty.tofuQty > 0)
 )
 const totalPrice = computed(() =>
@@ -300,7 +377,8 @@ async function doSubmit() {
     contact:    contact.value.trim(),
     remark:     remark.value.trim(),
     items: activeDayEntries.value.map(d => ({
-      pickupDay:  d.code,
+      pickupDay:  dateInfo(d.dateKey).code,
+      pickupDate: d.dateKey,
       soymilkQty: d.qty.soymilkQty,
       tofuQty:    d.qty.tofuQty,
     })),
@@ -322,7 +400,7 @@ async function doSubmit() {
 
     let msg = `訂購人：${name.value}　聯絡：${contact.value}\n\n`
     for (const d of activeDayEntries.value) {
-      msg += `【${labelFor(d.code)}】\n`
+      msg += `【${labelFor(d.dateKey)}】\n`
       if (d.qty.soymilkQty) msg += `豆漿 800cc × ${d.qty.soymilkQty} 袋\n`
       if (d.qty.tofuQty)    msg += `豆腐 × ${d.qty.tofuQty} 塊\n`
       msg += '\n'
@@ -349,10 +427,11 @@ async function doSubmit() {
 
 function resetForm() {
   name.value = ''; contact.value = ''; remark.value = ''
-  dayQty.value = {}
-  const firstCode = pickupDayOptions.value[0]?.code || 'tue'
-  selDays.value = [firstCode]
-  ensureDayQty(firstCode)
+  dateQty.value = {}
+  const firstKey = pickupDayOptions.value[0]?.dateKey
+  selDates.value = firstKey ? [firstKey] : []
+  if (firstKey) ensureDateQty(firstKey)
+  weekOffset.value = 0
   successModal.value = false
 }
 
@@ -360,9 +439,8 @@ function resetForm() {
 onMounted(async () => {
   loadKnownNames()
   await fetchBusinessDays()
-  const firstCode = pickupDayOptions.value[0]?.code || 'tue'
-  selDays.value = [firstCode]
-  ensureDayQty(firstCode)
+  const firstKey = pickupDayOptions.value[0]?.dateKey
+  if (firstKey) { selDates.value = [firstKey]; ensureDateQty(firstKey) }
   fetchClosedDates()
 
   // 嘗試取得已登入客戶
@@ -460,19 +538,61 @@ onMounted(async () => {
         豆子需提前一天浸泡，請盡早完成訂購，以便我們準備。
       </div>
 
+      <!-- 取貨週次切換 -->
+      <div class="sb-week-nav">
+        <button class="sb-week-nav__btn" type="button"
+                :disabled="weekOffset === 0"
+                @click="weekOffset--">‹ 上一週</button>
+        <span class="sb-week-nav__label">{{ weekOffsetLabel }}</span>
+        <button class="sb-week-nav__btn" type="button"
+                :disabled="weekOffset >= MAX_WEEK_OFFSET"
+                @click="weekOffset++">下一週 ›</button>
+      </div>
+
       <!-- 取貨日 tabs（可複選：一次勾選多個時段） -->
       <p class="sb-day-tabs__hint">可勾選多個取貨日，分開設定各自的數量</p>
       <div class="sb-day-tabs">
-        <button v-for="opt in pickupDayOptions" :key="opt.code"
+        <button v-for="opt in pickupDayOptions" :key="opt.dateKey"
                 class="sb-day-tab"
-                :class="{ active: selDays.includes(opt.code), closed: closedMap[opt.code] }"
+                :class="{ active: selDates.includes(opt.dateKey), closed: closedMap[opt.code] }"
                 :disabled="closedMap[opt.code]"
-                @click="toggleDay(opt.code)">
-          <span v-if="selDays.includes(opt.code)" class="sb-day-tab__check">✓</span>
+                @click="toggleDate(opt.dateKey)">
+          <span v-if="selDates.includes(opt.dateKey)" class="sb-day-tab__check">✓</span>
           <span class="sb-day-tab__label">{{ opt.label }}</span>
           <span class="sb-day-tab__date">{{ opt.dateStr }}</span>
           <span v-if="closedMap[opt.code]" class="sb-day-tab__closed">休息日</span>
         </button>
+      </div>
+
+      <!-- 包月：直接選月份＋填每次數量，一次加入整月可訂購的日期並套用相同數量 -->
+      <div class="sb-package">
+        <div class="sb-package__row">
+          <span class="sb-package__label">或整月訂購：</span>
+          <select v-model="packageMonth" class="sb-package__select">
+            <option v-for="opt in packageMonthOptions" :key="opt.val" :value="opt.val">{{ opt.label }}</option>
+          </select>
+        </div>
+        <div class="sb-package__qtys">
+          <div class="sb-package__qty">
+            <span>豆漿（每次）</span>
+            <div class="sb-qty-ctrl">
+              <button type="button" @click="adjPackageSoy(-1)">−</button>
+              <input type="number" :value="packageSoyQty" min="0"
+                     @input="packageSoyQty = Math.max(0, parseInt($event.target.value) || 0)" />
+              <button type="button" @click="adjPackageSoy(1)">+</button>
+            </div>
+          </div>
+          <div class="sb-package__qty">
+            <span>豆腐（每次）</span>
+            <div class="sb-qty-ctrl">
+              <button type="button" @click="adjPackageTofu(-1)">−</button>
+              <input type="number" :value="packageTofuQty" min="0"
+                     @input="packageTofuQty = Math.max(0, parseInt($event.target.value) || 0)" />
+              <button type="button" @click="adjPackageTofu(1)">+</button>
+            </div>
+          </div>
+        </div>
+        <button type="button" class="sb-package__btn" @click="applyMonthPackage">加入整月取貨日（套用以上數量）</button>
       </div>
 
       <!-- 全休公告 -->
@@ -518,15 +638,19 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 各已勾選時段的訂購卡片 -->
-      <div v-for="code in selDays" :key="code" class="sb-card sb-card--day">
+      <!-- 各已勾選日期的訂購卡片（依日期排序） -->
+      <div v-for="dateKey in sortedSelDates" :key="dateKey" class="sb-card sb-card--day">
         <div class="sb-card__title">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-          {{ labelFor(code) }}
-          <button v-if="selDays.length > 1"
+          {{ labelFor(dateKey) }}
+          <button v-if="selDates.length > 1"
                   class="sb-day-apply-btn"
                   type="button"
-                  @click="applyToAllDays(code)">套用到全部</button>
+                  @click="applyToAllDates(dateKey)">套用到全部</button>
+          <button class="sb-day-remove-btn"
+                  type="button"
+                  title="移除這天"
+                  @click="removeDate(dateKey)">✕</button>
         </div>
         <div class="sb-order-rows">
           <div class="sb-order-row">
@@ -535,10 +659,10 @@ onMounted(async () => {
               <span class="sb-order-row__sub">$50／袋</span>
             </div>
             <div class="sb-qty-ctrl">
-              <button @click="adjDaySoy(code, -1)">−</button>
-              <input type="number" :value="dayQty[code]?.soymilkQty ?? 0" min="0"
-                     @input="ensureDayQty(code); dayQty[code].soymilkQty = Math.max(0, parseInt($event.target.value) || 0)" />
-              <button @click="adjDaySoy(code, 1)">+</button>
+              <button @click="adjDateSoy(dateKey, -1)">−</button>
+              <input type="number" :value="dateQty[dateKey]?.soymilkQty ?? 0" min="0"
+                     @input="ensureDateQty(dateKey); dateQty[dateKey].soymilkQty = Math.max(0, parseInt($event.target.value) || 0)" />
+              <button @click="adjDateSoy(dateKey, 1)">+</button>
             </div>
           </div>
           <div class="sb-order-row">
@@ -547,10 +671,10 @@ onMounted(async () => {
               <span class="sb-order-row__sub">$50／塊</span>
             </div>
             <div class="sb-qty-ctrl">
-              <button @click="adjDayTofu(code, -1)">−</button>
-              <input type="number" :value="dayQty[code]?.tofuQty ?? 0" min="0"
-                     @input="ensureDayQty(code); dayQty[code].tofuQty = Math.max(0, parseInt($event.target.value) || 0)" />
-              <button @click="adjDayTofu(code, 1)">+</button>
+              <button @click="adjDateTofu(dateKey, -1)">−</button>
+              <input type="number" :value="dateQty[dateKey]?.tofuQty ?? 0" min="0"
+                     @input="ensureDateQty(dateKey); dateQty[dateKey].tofuQty = Math.max(0, parseInt($event.target.value) || 0)" />
+              <button @click="adjDateTofu(dateKey, 1)">+</button>
             </div>
           </div>
         </div>
@@ -558,9 +682,9 @@ onMounted(async () => {
 
       <!-- 摘要 -->
       <div v-if="hasOrder" class="sb-summary">
-        <template v-for="d in activeDayEntries" :key="d.code">
+        <template v-for="d in activeDayEntries" :key="d.dateKey">
           <div class="sb-summary__row sb-summary__row--day">
-            <span>{{ labelFor(d.code) }}</span>
+            <span>{{ labelFor(d.dateKey) }}</span>
           </div>
           <div v-if="d.qty.soymilkQty" class="sb-summary__row">
             <span>　豆漿 800cc × {{ d.qty.soymilkQty }} 袋</span>
@@ -587,7 +711,7 @@ onMounted(async () => {
       </Transition>
 
       <!-- 送出 -->
-      <button class="sb-submit" :disabled="submitting || selDays.length === 0 || selDays.some(c => closedMap[c])" @click="doSubmit">
+      <button class="sb-submit" :disabled="submitting || selDates.length === 0 || selDates.some(dk => isDateClosed(dk))" @click="doSubmit">
         <span v-if="submitting" class="sb-spinner"></span>
         {{ submitting ? '送出中…' : '確認送出訂單' }}
       </button>
@@ -661,6 +785,18 @@ onMounted(async () => {
   font-size: 0.78rem;
   color: rgba(255,255,255,0.65);
   margin: 0;
+}
+
+/* 手機窄螢幕：logo 縮小，標題／副標題換到獨立一行，避免被擠壓成逐字直排 */
+@media (max-width: 480px) {
+  .sb-header { padding: 1rem 1.1rem; }
+  .sb-header__inner { flex-wrap: wrap; row-gap: 0.6rem; }
+  .sb-header__logo { order: 1; }
+  .sb-header__logo-img { height: 30px; }
+  .sb-login-area { order: 2; margin-left: auto; }
+  .sb-header__text { order: 3; flex-basis: 100%; }
+  .sb-header__title { font-size: 1rem; white-space: nowrap; }
+  .sb-header__sub { font-size: 0.72rem; }
 }
 
 /* ── 登入區 ── */
@@ -775,6 +911,20 @@ onMounted(async () => {
 .sb-notice--info { background: #e8f4f0; border: 1px solid #b0d8cc; color: #1a5c48; }
 .sb-notice__icon { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
 
+/* ── Week Nav ── */
+.sb-week-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.sb-week-nav__btn {
+  font-family: inherit; font-size: 13px; font-weight: 500; color: #3d7a52;
+  background: #f0f9f4; border: 1px solid #b8d8c4; border-radius: 20px;
+  padding: 5px 12px; cursor: pointer; transition: background 0.15s;
+}
+.sb-week-nav__btn:hover:not(:disabled) { background: #e0f2e6; }
+.sb-week-nav__btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.sb-week-nav__label { font-size: 14px; font-weight: 600; color: #1a3d28; }
+
 /* ── Day Tabs ── */
 .sb-day-tabs__hint { font-size: 12px; color: #8a9e84; margin: 0 0 0.5rem; }
 .sb-day-tabs { display: flex; gap: 10px; margin-bottom: 1.25rem; flex-wrap: wrap; }
@@ -804,6 +954,29 @@ onMounted(async () => {
   padding: 1px 6px; font-weight: 500;
 }
 
+/* ── 包月 ── */
+.sb-package {
+  background: #fff; border: 1px solid #dce8d8; border-radius: 12px;
+  padding: 0.9rem 1rem; margin-bottom: 1rem;
+  display: flex; flex-direction: column; gap: 0.75rem;
+}
+.sb-package__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sb-package__label { font-size: 12.5px; color: #5a6e54; white-space: nowrap; }
+.sb-package__select {
+  flex: 1; min-width: 110px;
+  padding: 6px 10px; border: 1.5px solid #c5d4be; border-radius: 8px;
+  font-size: 13px; background: #fafcf9; color: #2a2e25; font-family: inherit;
+}
+.sb-package__qtys { display: flex; gap: 16px; flex-wrap: wrap; }
+.sb-package__qty { display: flex; flex-direction: column; gap: 4px; }
+.sb-package__qty span { font-size: 12px; color: #5a6e54; }
+.sb-package__btn {
+  font-family: inherit; font-size: 12.5px; font-weight: 600; color: #fff;
+  background: #3d7a52; border: none; border-radius: 8px;
+  padding: 8px 12px; cursor: pointer; transition: background 0.15s;
+}
+.sb-package__btn:hover { background: #2a5c3a; }
+
 /* ── Card ── */
 .sb-card {
   background: #fff; border: 1px solid #dce8d8;
@@ -824,6 +997,15 @@ onMounted(async () => {
   transition: background 0.15s;
 }
 .sb-day-apply-btn:hover { background: #e0f2e6; }
+.sb-day-remove-btn {
+  margin-left: auto; font-family: inherit;
+  width: 22px; height: 22px; flex-shrink: 0;
+  font-size: 12px; line-height: 1; color: #c0392b;
+  background: #fdf0f0; border: 1px solid #f5c6c6; border-radius: 50%;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.sb-day-remove-btn:hover { background: #fbe0e0; }
 
 /* ── Field ── */
 .sb-field { margin-bottom: 1rem; }
