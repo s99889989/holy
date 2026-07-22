@@ -69,8 +69,8 @@ function topFunction() {
                           </a>
                           <p class="access-info-text">
                             950 台東縣台東市博物館路110號<br />
-                            營業時間：<br class="d-inline-block d-lg-none" />08:00~17:30 (週一~週六)<br />
-                            服務電話：089-381382
+                            營業時間：<br class="d-inline-block d-lg-none" />08:00~17:00 (週一~週五)<br />
+                            服務電話：089-381382#888
                           </p>
                         </div>
                       </div>

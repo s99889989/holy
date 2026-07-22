@@ -20,7 +20,7 @@ onMounted(() => {
             <p class="pl-lg-2">
               財團法人天主教會花蓮教區附設聖母健康農莊<br />
               統編:36726891<br />
-              台東巿博物館路110號<span class="pl-lg-5">089-381382</span><br />營業時間：08:00~17:30(週一~週六)
+              台東巿博物館路110號<span class="pl-lg-5">089-381382</span><br />營業時間：08:00~17:00(週一~週五)
             </p>
           </div>
         </div>
@@ -61,8 +61,8 @@ onMounted(() => {
           <p class="footer-address">
             財團法人天主教會花蓮教區附設聖母健康農莊<br />
             統編:36726891<br />
-            台東巿博物館路110號<span style="padding-left: 20px"></span>089-381382<br>
-            8:00~17:30(週一~週六)
+            台東巿博物館路110號<span style="padding-left: 20px"></span>089-381382#888<br>
+            8:00~17:00(週一~週五)
           </p>
         </div>
       </div>

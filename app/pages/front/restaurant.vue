@@ -173,7 +173,7 @@ function topFunction() {
                   <div class="col-12 col-lg-10">
                     <div class="row justify-content-center no-gutters">
                       <div class="col-10">
-                        營業時間：11:30-13:30供餐 每周日公休 (團體40人以上可疑前預約安排用餐)<br>
+                        營業時間：11:30-13:30供餐 每周六日公休 (團體40人以上可疑前預約安排用餐)<br>
                         訂位電話：(089)381382#889 <br>
                         詳細資訊：即時營業資訊可加入田園餐廳LINE官方社群[<a
                           href="https://line.me/ti/g2/OZ50sFtSK0aUnYsHGxX-RVjvit0PZyjVvsh-lg?utm_source=invitation&utm_medium=link_copy&utm_campaign=default"
