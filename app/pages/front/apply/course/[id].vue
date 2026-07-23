@@ -30,6 +30,15 @@
 
   const course = computed(() => store.publicCourse)
   const answerFields = computed(() => (course.value?.fields ?? []).filter(f => f.type !== 'display_image'))
+  const isFieldVisible = (f) => {
+    if (!f.dependsOn) return true
+    const v = answers[f.dependsOn]
+    if (Array.isArray(v)) return v.includes(f.dependsOnValue)
+    return v === f.dependsOnValue
+  }
+  // 條件顯示的欄位（例如「單次上課日選擇」要選了「單次」才出現）在這裡統一過濾，
+  // 表單渲染跟必填檢查都用這份，條件不成立就不會被要求填答
+  const visibleAnswerFields = computed(() => answerFields.value.filter(isFieldVisible))
   const isDeadlinePassed = computed(() => {
     if (!course.value?.registrationDeadline) return false
     return new Date(course.value.registrationDeadline.replace(' ', 'T')) < new Date()
@@ -159,7 +168,7 @@
   const successModal = ref(false)
 
   const validate = () => {
-    for (const f of answerFields.value) {
+    for (const f of visibleAnswerFields.value) {
       if (!f.required) continue
       const v = answers[f.id]
       const empty = v === undefined || v === null || v === ''
@@ -343,7 +352,7 @@
               </span>
             </div>
 
-            <div v-for="f in answerFields" :key="f.id" class="cr-field">
+            <div v-for="f in visibleAnswerFields" :key="f.id" class="cr-field">
               <label>{{ f.label }}<span v-if="f.required" class="cr-required"> *</span></label>
 
               <input
@@ -458,6 +467,19 @@
     .cr-header__text { order: 3; flex-basis: 100%; }
     .cr-header__title { font-size: 1rem; }
     .cr-header__sub { font-size: 0.72rem; }
+  }
+
+  /* ── 桌機：加寬，不然整頁內容擠在畫面左邊一小條 ── */
+  @media (min-width: 768px) {
+    .cr-header { padding: 1.5rem 2rem; }
+    .cr-header__inner { max-width: 760px; }
+    .cr-header__logo-img { height: 52px; }
+    .cr-header__title { font-size: 1.35rem; }
+    .cr-header__sub { font-size: 0.85rem; }
+
+    .cr-wrap { max-width: 760px; padding: 2.5rem 1.5rem 4rem; }
+    .cr-card { padding: 1.75rem 2rem; }
+    .cr-card__title { font-size: 20px; }
   }
 
   /* ── 登入區 ── */
