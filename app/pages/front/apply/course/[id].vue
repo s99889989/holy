@@ -504,7 +504,7 @@
     display: block; width: 100%; height: auto; border-radius: 14px;
     margin-bottom: 1rem; background-color: #e5ede2;
   }
-  .cr-desc { font-size: 13.5px; color: #33452e; line-height: 1.7; margin: 0 0 1rem; white-space: pre-line; }
+  .cr-desc { font-size: 15px; color: #33452e; line-height: 1.75; margin: 0 0 1rem; white-space: pre-line; }
 
   .cr-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1rem; }
   .cr-badge { font-size: 12px; padding: 4px 12px; border-radius: 20px; font-weight: 500; }
@@ -614,4 +614,36 @@
   .cr-modal__btns button:hover { background: #2a5c3a; }
   .cr-modal-fade-enter-active, .cr-modal-fade-leave-active { transition: opacity 0.2s; }
   .cr-modal-fade-enter-from, .cr-modal-fade-leave-to { opacity: 0; }
+
+  /* ── 桌機版面優化（手機維持原本 560px 單欄不動，這段只在寬螢幕生效）── */
+  @media (min-width: 768px) {
+    .cr-header { padding: 1.75rem 2rem; }
+    .cr-header__inner { max-width: 760px; gap: 1.25rem; }
+    .cr-header__logo-img { height: 50px; }
+    .cr-header__title { font-size: 1.35rem; }
+    .cr-header__sub { font-size: 0.85rem; }
+
+    .cr-wrap { max-width: 760px; padding: 2.5rem 1.5rem 4rem; }
+
+    .cr-cover { max-height: 420px; object-fit: contain; background-color: transparent; }
+
+    .cr-desc { font-size: 16px; }
+
+    .cr-badge { font-size: 13px; padding: 5px 14px; }
+
+    .cr-card { padding: 1.75rem 2rem; }
+    .cr-card__title { font-size: 16.5px; }
+    .cr-card__hint { font-size: 14px; }
+
+    .cr-field { margin-bottom: 1.25rem; }
+    .cr-field label { font-size: 14px; }
+    .cr-field input[type=text],
+    .cr-field input[type=date],
+    .cr-field textarea,
+    .cr-field select { font-size: 15px; padding: 10px 14px; }
+    .cr-choice { font-size: 15px; }
+
+    .cr-submit { font-size: 16px; padding: 14px; }
+    .cr-btn { font-size: 15px; padding: 12px; }
+  }
 </style>
