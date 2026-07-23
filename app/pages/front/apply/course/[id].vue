@@ -204,6 +204,9 @@
   }
 
   const startEdit = () => { resetAnswers(); editing.value = true }
+
+  // ── 課程描述收合 ──────────────────────────────────────────────
+  const descExpanded = ref(false)
 </script>
 
 <template>
@@ -269,7 +272,20 @@
                 class="cr-cover"
         >
 
-        <p v-if="course.description" class="cr-desc">{{ course.description }}</p>
+        <div v-if="course.description" class="cr-desc-wrap">
+          <p
+                  class="cr-desc"
+                  :class="{ 'cr-desc--collapsed': !descExpanded }"
+          >{{ course.description }}</p>
+          <button type="button" class="cr-desc-toggle" @click="descExpanded = !descExpanded">
+            {{ descExpanded ? '收合' : '展開全文' }}
+            <svg
+                    xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" stroke-width="2"
+                    class="cr-desc-toggle__icon" :class="{ 'cr-desc-toggle__icon--open': descExpanded }"
+            ><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+        </div>
 
         <div class="cr-badges">
           <span class="cr-badge cr-badge--main">
@@ -504,7 +520,20 @@
     display: block; width: 100%; height: auto; border-radius: 14px;
     margin-bottom: 1rem; background-color: #e5ede2;
   }
-  .cr-desc { font-size: 22px; color: #33452e; line-height: 1.75; margin: 0 0 1rem; white-space: pre-line; }
+  .cr-desc-wrap { margin: 0 0 1rem; }
+  .cr-desc { font-size: 22px; color: #33452e; line-height: 1.7; margin: 0; white-space: pre-line; }
+  .cr-desc--collapsed {
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .cr-desc-toggle {
+    display: flex; align-items: center; gap: 4px; margin-top: 6px;
+    background: none; border: none; padding: 0; cursor: pointer;
+    font-size: 13px; font-weight: 500; color: #3d7a52; font-family: inherit;
+  }
+  .cr-desc-toggle:hover { color: #2a5c3a; }
+  .cr-desc-toggle__icon { transition: transform 0.2s; }
+  .cr-desc-toggle__icon--open { transform: rotate(180deg); }
 
   .cr-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1rem; }
   .cr-badge { font-size: 12px; padding: 4px 12px; border-radius: 20px; font-weight: 500; }
@@ -513,8 +542,9 @@
 
   /* ── Card ── */
   .cr-card { background: #fff; border: 1px solid #dce8d8; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+  /*標題*/
   .cr-card__title {
-    display: flex; align-items: center; gap: 7px; font-size: 15px; font-weight: 600;
+    display: flex; align-items: center; gap: 7px; font-size: 18px; font-weight: 600;
     color: #1a3d28; margin-bottom: 1rem; font-family: 'Noto Serif TC', serif;
   }
   .cr-card__title svg { width: 18px; height: 18px; color: #3d7a52; flex-shrink: 0; }
@@ -538,7 +568,8 @@
   /* ── Field ── */
   .cr-field { margin-bottom: 1rem; }
   .cr-field:last-of-type { margin-bottom: 0; }
-  .cr-field label { display: block; font-size: 13px; color: #5a6e54; margin-bottom: 5px; font-weight: 500; }
+  /*欄位*/
+  .cr-field label { display: block; font-size: 18px; color: #5a6e54; margin-bottom: 5px; font-weight: 500; }
   .cr-field input[type=text],
   .cr-field input[type=date],
   .cr-field textarea,
@@ -614,34 +645,4 @@
   .cr-modal__btns button:hover { background: #2a5c3a; }
   .cr-modal-fade-enter-active, .cr-modal-fade-leave-active { transition: opacity 0.2s; }
   .cr-modal-fade-enter-from, .cr-modal-fade-leave-to { opacity: 0; }
-
-  /* ── 桌機版面優化（手機維持原本 560px 單欄不動，這段只在寬螢幕生效）── */
-  @media (min-width: 768px) {
-    .cr-header { padding: 1.75rem 2rem; }
-    .cr-header__inner { max-width: 760px; gap: 1.25rem; }
-    .cr-header__logo-img { height: 50px; }
-    .cr-header__title { font-size: 1.35rem; }
-    .cr-header__sub { font-size: 0.85rem; }
-
-    .cr-wrap { max-width: 760px; padding: 2.5rem 1.5rem 4rem; }
-
-    .cr-cover { max-height: 420px; object-fit: contain; background-color: transparent; }
-
-    .cr-badge { font-size: 13px; padding: 5px 14px; }
-
-    .cr-card { padding: 1.75rem 2rem; }
-    .cr-card__title { font-size: 16.5px; }
-    .cr-card__hint { font-size: 14px; }
-
-    .cr-field { margin-bottom: 1.25rem; }
-    .cr-field label { font-size: 14px; }
-    .cr-field input[type=text],
-    .cr-field input[type=date],
-    .cr-field textarea,
-    .cr-field select { font-size: 15px; padding: 10px 14px; }
-    .cr-choice { font-size: 15px; }
-
-    .cr-submit { font-size: 16px; padding: 14px; }
-    .cr-btn { font-size: 15px; padding: 12px; }
-  }
 </style>
