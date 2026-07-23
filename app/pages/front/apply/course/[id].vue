@@ -504,7 +504,7 @@
     display: block; width: 100%; height: auto; border-radius: 14px;
     margin-bottom: 1rem; background-color: #e5ede2;
   }
-  .cr-desc { font-size: 15px; color: #33452e; line-height: 1.75; margin: 0 0 1rem; white-space: pre-line; }
+  .cr-desc { font-size: 22px; color: #33452e; line-height: 1.75; margin: 0 0 1rem; white-space: pre-line; }
 
   .cr-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1rem; }
   .cr-badge { font-size: 12px; padding: 4px 12px; border-radius: 20px; font-weight: 500; }
@@ -626,8 +626,6 @@
     .cr-wrap { max-width: 760px; padding: 2.5rem 1.5rem 4rem; }
 
     .cr-cover { max-height: 420px; object-fit: contain; background-color: transparent; }
-
-    .cr-desc { font-size: 16px; }
 
     .cr-badge { font-size: 13px; padding: 5px 14px; }
 
