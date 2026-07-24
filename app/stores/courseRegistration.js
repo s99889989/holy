@@ -74,6 +74,14 @@ export const useCourseRegistrationStore = defineStore('courseRegistration', {
         body: JSON.stringify({ maxCapacity })
       })
     },
+    async updateRequireLogin(id, requireLogin) {
+      await fetch(`${this._base()}/${id}/require-login`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requireLogin })
+      })
+    },
     // fields: 完整陣列覆寫 [{ id, label, type, required, options, order }]
     async updateFields(id, fields) {
       await fetch(`${this._base()}/${id}/fields`, {
