@@ -82,6 +82,23 @@ export const useCourseRegistrationStore = defineStore('courseRegistration', {
         body: JSON.stringify({ requireLogin })
       })
     },
+    async updatePaymentSettings(id, paymentEnabled, paymentInfo) {
+      await fetch(`${this._base()}/${id}/payment-settings`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentEnabled, paymentInfo })
+      })
+    },
+    // priceOptions: 完整陣列覆寫 [{ id, label, amount }]
+    async updatePriceOptions(id, priceOptions) {
+      await fetch(`${this._base()}/${id}/price-options`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(priceOptions)
+      })
+    },
     // fields: 完整陣列覆寫 [{ id, label, type, required, options, order }]
     async updateFields(id, fields) {
       await fetch(`${this._base()}/${id}/fields`, {
@@ -117,12 +134,13 @@ export const useCourseRegistrationStore = defineStore('courseRegistration', {
     },
 
     // ── 後台：報名名單手動 CRUD ──────────────────────────────
-    async addRegistration(id, displayName, answers) {
+    // payment 選填：{ priceOptionId, paymentNote, paid }，現場報名想順便標記已收款時用
+    async addRegistration(id, displayName, answers, payment = null) {
       await fetch(`${this._base()}/${id}/registration/add`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName, answers })
+        body: JSON.stringify({ displayName, answers, ...(payment ?? {}) })
       })
       await this.fetchCourse(id)
     },
@@ -146,6 +164,11 @@ export const useCourseRegistrationStore = defineStore('courseRegistration', {
       await fetch(`${this._base()}/${id}/toggle/${regId}`, { method: 'PUT', credentials: 'include' })
       await this.fetchCourse(id)
     },
+    // 核對收款：切換某一筆報名的已繳費狀態
+    async togglePaid(id, regId) {
+      await fetch(`${this._base()}/${id}/registration/${regId}/toggle-paid`, { method: 'PUT', credentials: 'include' })
+      await this.fetchCourse(id)
+    },
     async reset(id) {
       await fetch(`${this._base()}/${id}/reset`, { method: 'PUT', credentials: 'include' })
       await this.fetchCourse(id)
@@ -156,12 +179,13 @@ export const useCourseRegistrationStore = defineStore('courseRegistration', {
       const res = await fetch(`${this._base()}/public/${id}`, { credentials: 'include' })
       this.publicCourse = await res.json()
     },
-    async submitRegistration(id, answers) {
+    // payment 選填：{ priceOptionId, paymentNote }，該課程有開啟繳費追蹤時才需要帶
+    async submitRegistration(id, answers, payment = null) {
       const res = await fetch(`${this._base()}/${id}/register`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers })
+        body: JSON.stringify({ answers, ...(payment ?? {}) })
       })
       return await res.json()
     },
