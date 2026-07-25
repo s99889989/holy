@@ -1,10 +1,10 @@
 <script setup>
 // 專案holy 位置front/apply/course/[id].vue
-definePageMeta({ layout: false })
+definePageMeta({layout: false})
 
-import { ref, computed, reactive, onMounted, nextTick, watch } from 'vue'
-import { useCourseRegistrationStore } from '~/stores/courseRegistration.js'
-import { useCustomerStore } from '~/stores/customer.js'
+import {ref, computed, reactive, onMounted, nextTick, watch} from 'vue'
+import {useCourseRegistrationStore} from '~/stores/courseRegistration.js'
+import {useCustomerStore} from '~/stores/customer.js'
 
 const route = useRoute()
 const courseId = route.params.id
@@ -117,11 +117,14 @@ const handleCredential = async (response) => {
     const res = await fetch(`${BASE.value}/google-login`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential: response.credential }),
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({credential: response.credential}),
     })
     const data = await res.json()
-    if (data.error) { loginError.value = data.error; return }
+    if (data.error) {
+      loginError.value = data.error;
+      return
+    }
     customerStore.setCustomer(data)
     loginPanelOpen.value = false
     await fetchCourseData()
@@ -131,8 +134,9 @@ const handleCredential = async (response) => {
 }
 const logout = async () => {
   try {
-    await fetch(`${BASE.value}/logout`, { method: 'POST', credentials: 'include' })
-  } catch { /* ignore */ }
+    await fetch(`${BASE.value}/logout`, {method: 'POST', credentials: 'include'})
+  } catch { /* ignore */
+  }
   customerStore.clearCustomer()
 }
 const toggleLoginPanel = () => {
@@ -150,13 +154,17 @@ const editing = ref(false)
 // ── 繳費（人工核對版）────────────────────────────────────────
 const selectedPriceOptionId = ref('')
 const paymentNoteInput = ref('')
-// 「課程選擇」之類的欄位改答案時，可選的價格清單會跟著變，原本選的價格如果
-// 不再符合條件就清掉，避免送出時金額跟課程選擇對不起來
+// 「課程選擇」之類的欄位改答案時，可選的價格清單會跟著變。如果設定成一個條件
+// 只對應一個價格（後台常見的用法：「單次」只連一個價格、「8堂」只連一個價格…），
+// 就不用讓報名者自己選了，直接自動帶入；只有條件設定得不明確（同時符合多個價格）
+// 才退回讓使用者手動選，維持報名一定會有一個明確金額。
 watch(visiblePriceOptions, (list) => {
-  if (selectedPriceOptionId.value && !list.some(p => p.id === selectedPriceOptionId.value)) {
+  if (list.length === 1) {
+    selectedPriceOptionId.value = list[0].id
+  } else if (selectedPriceOptionId.value && !list.some(p => p.id === selectedPriceOptionId.value)) {
     selectedPriceOptionId.value = ''
   }
-})
+}, {immediate: true})
 
 const resetAnswers = () => {
   answerFields.value.forEach(f => {
@@ -177,10 +185,11 @@ const fetchCourseData = async () => {
 
 const fetchMe = async () => {
   try {
-    const res = await fetch(`${BASE.value}/me`, { credentials: 'include' })
+    const res = await fetch(`${BASE.value}/me`, {credentials: 'include'})
     const data = await res.json()
     if (!data.error) customerStore.setCustomer(data)
-  } catch { /* 未登入，靜默留在頁面 */ }
+  } catch { /* 未登入，靜默留在頁面 */
+  }
 }
 
 onMounted(async () => {
@@ -216,9 +225,9 @@ const successModal = ref(false)
 
 const validate = () => {
   if (course.value?.paymentEnabled) {
-    if (!selectedPriceOptionId.value) return '請選擇報名價格'
-    if (!visiblePriceOptions.value.some(p => p.id === selectedPriceOptionId.value)) {
-      return '價格選項跟所選課程不符，請重新選擇'
+    if (!visiblePriceOptions.value.length) return '目前的選擇沒有對應的報名價格，請確認上面的選項'
+    if (!selectedPriceOptionId.value || !visiblePriceOptions.value.some(p => p.id === selectedPriceOptionId.value)) {
+      return '請選擇報名價格'
     }
   }
   for (const f of visibleAnswerFields.value) {
@@ -233,14 +242,17 @@ const validate = () => {
 
 const submit = async () => {
   const err = validate()
-  if (err) { errorMsg.value = err; return }
+  if (err) {
+    errorMsg.value = err;
+    return
+  }
   errorMsg.value = ''
   submitting.value = true
   try {
     const payment = course.value?.paymentEnabled
-        ? { priceOptionId: selectedPriceOptionId.value, paymentNote: paymentNoteInput.value }
+        ? {priceOptionId: selectedPriceOptionId.value, paymentNote: paymentNoteInput.value}
         : null
-    const res = await store.submitRegistration(courseId, { ...answers }, payment)
+    const res = await store.submitRegistration(courseId, {...answers}, payment)
     if (res.error) {
       errorMsg.value = res.error
     } else {
@@ -262,8 +274,8 @@ const paymentNoteSaving = ref(false)
 const submitPaymentNote = async () => {
   paymentNoteSaving.value = true
   try {
-    const payment = { priceOptionId: selectedPriceOptionId.value, paymentNote: paymentNoteInput.value }
-    const res = await store.submitRegistration(courseId, { ...answers }, payment)
+    const payment = {priceOptionId: selectedPriceOptionId.value, paymentNote: paymentNoteInput.value}
+    const res = await store.submitRegistration(courseId, {...answers}, payment)
     if (res.error) errorMsg.value = res.error
     else await fetchCourseData()
   } catch {
@@ -286,7 +298,10 @@ const cancelRegistration = async () => {
   }
 }
 
-const startEdit = () => { resetAnswers(); editing.value = true }
+const startEdit = () => {
+  resetAnswers();
+  editing.value = true
+}
 
 // ── 課程描述收合 ──────────────────────────────────────────────
 const descExpanded = ref(false)
@@ -308,7 +323,11 @@ const descExpanded = ref(false)
 
         <div class="cr-login-area" ref="loginAreaRef">
           <button v-if="!customer" class="cr-login-btn" @click="toggleLoginPanel">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
             登入
           </button>
           <button v-else class="cr-avatar-btn" @click="toggleLoginPanel">
@@ -320,7 +339,11 @@ const descExpanded = ref(false)
             <div v-if="loginPanelOpen" class="cr-login-panel">
               <div v-if="!customer">
                 <p class="cr-login-panel__hint">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path d="M9 11l3 3L22 4"/>
+                    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+                  </svg>
                   登入後才能報名課程
                 </p>
                 <div id="cr-google-btn-panel"></div>
@@ -328,7 +351,8 @@ const descExpanded = ref(false)
               </div>
               <div v-else>
                 <div class="cr-login-panel__user">
-                  <img v-if="customer.picture" :src="customer.picture" :alt="customer.name" class="cr-login-panel__avatar">
+                  <img v-if="customer.picture" :src="customer.picture" :alt="customer.name"
+                       class="cr-login-panel__avatar">
                   <div>
                     <p class="cr-login-panel__name">{{ customer.name }}</p>
                     <p class="cr-login-panel__email">{{ customer.email }}</p>
@@ -364,7 +388,9 @@ const descExpanded = ref(false)
                     xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
                     fill="none" stroke="currentColor" stroke-width="2"
                     class="cr-desc-toggle__icon" :class="{ 'cr-desc-toggle__icon--open': descExpanded }"
-                ><path d="M6 9l6 6 6-6"/></svg>
+                >
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
               </button>
               <p
                   class="cr-desc"
@@ -387,7 +413,11 @@ const descExpanded = ref(false)
             <!-- 未登入，且這堂課要求登入：整塊登入卡片擋住表單 -->
             <div v-if="showLoginGate" class="cr-card cr-card--login">
               <div class="cr-card__title">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
                 請先登入才能報名
               </div>
               <p v-if="isInAppBrowser" class="cr-inapp-hint">
@@ -404,11 +434,15 @@ const descExpanded = ref(false)
               <!-- 已報名，非編輯模式 -->
               <div v-if="course.myRegistration && !editing" class="cr-card cr-card--success">
                 <div class="cr-card__success-icon">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
                 </div>
                 <p class="cr-card__success-text">你已經報名這堂課程</p>
                 <p class="cr-card__success-sub">報名時間：{{ course.myRegistration.submittedAt }}</p>
-                <div v-if="course.paymentEnabled" class="cr-payment-status" :class="{ 'cr-payment-status--paid': course.myRegistration.paid }">
+                <div v-if="course.paymentEnabled" class="cr-payment-status"
+                     :class="{ 'cr-payment-status--paid': course.myRegistration.paid }">
                   {{ course.myRegistration.priceLabel || '未選擇價格' }}
                   <template v-if="course.myRegistration.amount">（${{ course.myRegistration.amount }}）</template>
                   ・{{ course.myRegistration.paid ? '已確認收款' : '尚未確認收款' }}
@@ -432,7 +466,11 @@ const descExpanded = ref(false)
               <!-- 報名表單 -->
               <div v-else class="cr-card">
                 <div class="cr-card__title">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       stroke-width="2">
+                    <path
+                        d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
+                  </svg>
                   報名資料
                   <span v-if="customer" class="cr-logged-badge">
                 <img v-if="customer.picture" :src="customer.picture" class="cr-logged-badge__avatar">
@@ -448,7 +486,7 @@ const descExpanded = ref(false)
                       v-model="answers[f.id]"
                       :type="f.type === 'date' ? 'date' : 'text'"
                   >
-                  <textarea v-else-if="f.type === 'textarea'" v-model="answers[f.id]" rows="3" />
+                  <textarea v-else-if="f.type === 'textarea'" v-model="answers[f.id]" rows="3"/>
                   <select v-else-if="f.type === 'select'" v-model="answers[f.id]">
                     <option value="">請選擇</option>
                     <option v-for="opt in f.options" :key="opt" :value="opt">{{ opt }}</option>
@@ -473,24 +511,36 @@ const descExpanded = ref(false)
                   >
                 </div>
 
-                <!-- 價格放在自訂欄位後面：這樣「課程選擇」選好之後，價格選項才能照著
-                     顯示條件正確篩選（例如選「單次」只出現體驗價） -->
+                <!-- 價格放在自訂欄位後面：這樣「課程選擇」選好之後，價格才能照著顯示
+                     條件自動帶出來。如果條件設定成「一個選擇對一個價格」，這裡就只是
+                     顯示結果，不用報名者自己選一次；設定不明確（同時符合多個價格）才
+                     退回讓報名者手動選 -->
                 <div v-if="course.paymentEnabled" class="cr-payment-box">
-                  <label>選擇報名價格<span class="cr-required"> *</span></label>
-                  <div class="cr-choice-group">
+                  <label>報名價格</label>
+                  <p v-if="visiblePriceOptions.length === 1" class="cr-payment-box__auto">
+                    {{ visiblePriceOptions[0].label }}（${{ visiblePriceOptions[0].amount }}）
+                  </p>
+                  <div v-else-if="visiblePriceOptions.length > 1" class="cr-choice-group">
                     <label v-for="p in visiblePriceOptions" :key="p.id" class="cr-choice">
                       <input v-model="selectedPriceOptionId" type="radio" :value="p.id">
                       {{ p.label }}（${{ p.amount }}）
                     </label>
                   </div>
-                  <p v-if="!visiblePriceOptions.length" class="cr-payment-box__empty">
-                    {{ course.priceOptions?.length ? '請先完成上面的選擇，才會顯示可以選的價格' : '這堂課還沒有設定價格選項，請聯繫承辦人員' }}
+                  <p v-else class="cr-payment-box__empty">
+                    {{
+                      course.priceOptions?.length ? '請先完成上面的選擇，才會顯示對應的報名價格' : '這堂課還沒有設定價格選項，請聯繫承辦人員'
+                    }}
                   </p>
                 </div>
 
                 <Transition name="cr-err-fade">
                   <div v-if="errorMsg" class="cr-error">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="cr-error__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="cr-error__icon" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="12" y1="8" x2="12" y2="12"/>
+                      <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
                     <span>{{ errorMsg }}</span>
                     <button class="cr-error__close" @click="errorMsg = ''">✕</button>
                   </div>
@@ -518,7 +568,10 @@ const descExpanded = ref(false)
         <div v-if="successModal" class="cr-modal-backdrop" @click.self="successModal = false">
           <div class="cr-modal cr-modal--success">
             <div class="cr-modal__success-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
             </div>
             <h3 class="cr-modal__title">報名成功！</h3>
             <p class="cr-modal__content">{{ course?.name }}</p>
@@ -568,7 +621,11 @@ const descExpanded = ref(false)
 }
 
 /* ── Wrap（基本值放最前面，讓下面的 @media 桌機版規則能正確覆蓋） ── */
-.cr-wrap { max-width: 560px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+.cr-wrap {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
 
 /* ── Header ── */
 .cr-header {
@@ -576,6 +633,7 @@ const descExpanded = ref(false)
   padding: 1.25rem 1.5rem;
   position: relative;
 }
+
 .cr-header__inner {
   max-width: 560px;
   margin: 0 auto;
@@ -583,284 +641,899 @@ const descExpanded = ref(false)
   align-items: center;
   gap: 1rem;
 }
-.cr-header__logo-img { height: 44px; filter: brightness(0) invert(1); opacity: 0.9; }
-.cr-header__text { flex: 1; min-width: 0; }
+
+.cr-header__logo-img {
+  height: 44px;
+  filter: brightness(0) invert(1);
+  opacity: 0.9;
+}
+
+.cr-header__text {
+  flex: 1;
+  min-width: 0;
+}
+
 .cr-header__title {
   font-family: 'Noto Serif TC', serif;
-  font-size: 1.1rem; font-weight: 700; color: #fff; margin: 0 0 2px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.cr-header__sub { font-size: 0.78rem; color: rgba(255,255,255,0.65); margin: 0; }
+
+.cr-header__sub {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0;
+}
 
 @media (max-width: 480px) {
-  .cr-header { padding: 1rem 1.1rem; }
-  .cr-header__inner { flex-wrap: wrap; row-gap: 0.6rem; }
-  .cr-header__logo { order: 1; }
-  .cr-header__logo-img { height: 30px; }
-  .cr-login-area { order: 2; margin-left: auto; }
-  .cr-header__text { order: 3; flex-basis: 100%; }
-  .cr-header__title { font-size: 1rem; }
-  .cr-header__sub { font-size: 0.72rem; }
+  .cr-header {
+    padding: 1rem 1.1rem;
+  }
+
+  .cr-header__inner {
+    flex-wrap: wrap;
+    row-gap: 0.6rem;
+  }
+
+  .cr-header__logo {
+    order: 1;
+  }
+
+  .cr-header__logo-img {
+    height: 30px;
+  }
+
+  .cr-login-area {
+    order: 2;
+    margin-left: auto;
+  }
+
+  .cr-header__text {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .cr-header__title {
+    font-size: 1rem;
+  }
+
+  .cr-header__sub {
+    font-size: 0.72rem;
+  }
 }
 
 /* ── 桌機：加寬，不然整頁內容擠在畫面左邊一小條 ── */
 @media (min-width: 768px) {
-  .cr-header { padding: 1.5rem 2rem; }
-  .cr-header__inner { max-width: 760px; }
-  .cr-header__logo-img { height: 52px; }
-  .cr-header__title { font-size: 1.35rem; }
-  .cr-header__sub { font-size: 0.85rem; }
+  .cr-header {
+    padding: 1.5rem 2rem;
+  }
 
-  .cr-wrap { max-width: 760px; padding: 2.5rem 1.5rem 4rem; }
-  .cr-card { padding: 1.75rem 2rem; }
-  .cr-card__title { font-size: 20px; }
+  .cr-header__inner {
+    max-width: 760px;
+  }
+
+  .cr-header__logo-img {
+    height: 52px;
+  }
+
+  .cr-header__title {
+    font-size: 1.35rem;
+  }
+
+  .cr-header__sub {
+    font-size: 0.85rem;
+  }
+
+  .cr-wrap {
+    max-width: 760px;
+    padding: 2.5rem 1.5rem 4rem;
+  }
+
+  .cr-card {
+    padding: 1.75rem 2rem;
+  }
+
+  .cr-card__title {
+    font-size: 20px;
+  }
 }
 
 /* ── 螢幕更寬：報名資料改顯示在右側，左邊放課程介紹 ── */
 @media (min-width: 1024px) {
-  .cr-wrap { max-width: 1080px; padding: 2.5rem 1.5rem 4rem; }
+  .cr-wrap {
+    max-width: 1080px;
+    padding: 2.5rem 1.5rem 4rem;
+  }
 
   .cr-layout {
     display: flex;
     align-items: flex-start;
     gap: 2rem;
   }
+
   .cr-layout__main {
     flex: 1 1 0%;
     min-width: 0;
   }
+
   .cr-layout__side {
     flex: 0 0 380px;
   }
 }
 
 /* ── 登入區 ── */
-.cr-login-area { position: relative; flex-shrink: 0; }
+.cr-login-area {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .cr-login-btn {
-  display: flex; align-items: center; gap: 5px;
-  padding: 6px 12px; background: rgba(255,255,255,0.15);
-  border: 1.5px solid rgba(255,255,255,0.35); border-radius: 20px;
-  color: #fff; font-size: 13px; font-family: inherit; cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  border-radius: 20px;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
   transition: background 0.15s;
 }
-.cr-login-btn:hover { background: rgba(255,255,255,0.25); }
-.cr-avatar-btn {
-  width: 36px; height: 36px; border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.6); overflow: hidden; cursor: pointer;
-  background: #1FC29C; color: #fff; font-weight: 700; font-size: 14px;
-  display: flex; align-items: center; justify-content: center; padding: 0;
+
+.cr-login-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
-.cr-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.cr-avatar-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+  cursor: pointer;
+  background: #1FC29C;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.cr-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 
 .cr-login-panel {
-  position: absolute; right: 0; top: calc(100% + 10px); width: 250px;
-  background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.15);
-  border: 1px solid #eee; padding: 14px 16px; z-index: 1000;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: 250px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .15);
+  border: 1px solid #eee;
+  padding: 14px 16px;
+  z-index: 1000;
 }
-.cr-login-panel__hint {
-  display: flex; align-items: center; gap: 6px; font-size: 12px; color: #3d7a52;
-  margin: 0 0 10px; background: #f0f9f4; border-radius: 7px; padding: 7px 10px;
-}
-.cr-login-panel__error { font-size: 12px; color: #c0392b; margin: 8px 0 0; }
-.cr-login-panel__user {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
-  padding-bottom: 12px; border-bottom: 1px solid #f5f5f5;
-}
-.cr-login-panel__avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
-.cr-login-panel__name { font-size: 13px; font-weight: 600; color: #333; margin: 0; }
-.cr-login-panel__email { font-size: 11px; color: #999; margin: 0; }
-.cr-login-panel__logout {
-  display: block; width: 100%; text-align: left; font-size: 13px; color: #e74c3c;
-  background: none; border: none; cursor: pointer; padding: 8px 0; font-family: inherit;
-}
-.cr-login-panel__logout:hover { color: #c0392b; }
 
-.cr-overlay { position: fixed; inset: 0; z-index: 999; }
-.cr-panel-fade-enter-active, .cr-panel-fade-leave-active { transition: opacity 0.15s, transform 0.15s; }
-.cr-panel-fade-enter-from, .cr-panel-fade-leave-to { opacity: 0; transform: translateY(-4px) scale(0.97); }
+.cr-login-panel__hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #3d7a52;
+  margin: 0 0 10px;
+  background: #f0f9f4;
+  border-radius: 7px;
+  padding: 7px 10px;
+}
+
+.cr-login-panel__error {
+  font-size: 12px;
+  color: #c0392b;
+  margin: 8px 0 0;
+}
+
+.cr-login-panel__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.cr-login-panel__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.cr-login-panel__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.cr-login-panel__email {
+  font-size: 11px;
+  color: #999;
+  margin: 0;
+}
+
+.cr-login-panel__logout {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+  color: #e74c3c;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 0;
+  font-family: inherit;
+}
+
+.cr-login-panel__logout:hover {
+  color: #c0392b;
+}
+
+.cr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.cr-panel-fade-enter-active, .cr-panel-fade-leave-active {
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.cr-panel-fade-enter-from, .cr-panel-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
+}
 
 .cr-logged-badge {
-  display: inline-flex; align-items: center; gap: 5px; margin-left: auto;
-  background: #f0f9f4; border: 1px solid #b8d8c4; border-radius: 20px;
-  padding: 3px 9px 3px 5px; font-size: 12px; font-weight: 500; color: #1a5c3a;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  background: #f0f9f4;
+  border: 1px solid #b8d8c4;
+  border-radius: 20px;
+  padding: 3px 9px 3px 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1a5c3a;
 }
-.cr-logged-badge__avatar { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; }
+
+.cr-logged-badge__avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+}
 
 /* ── Wrap ── */
-.cr-loading { text-align: center; padding: 4rem 0; color: #8a9e84; font-size: 14px; }
+.cr-loading {
+  text-align: center;
+  padding: 4rem 0;
+  color: #8a9e84;
+  font-size: 14px;
+}
 
 .cr-cover {
-  display: block; width: 100%; height: auto; border-radius: 14px;
-  margin-bottom: 1rem; background-color: #e5ede2;
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  margin-bottom: 1rem;
+  background-color: #e5ede2;
 }
-.cr-desc-wrap { margin: 0 0 1rem; }
-.cr-desc { font-size: 22px; color: #33452e; line-height: 1.7; margin: 0; white-space: pre-line; }
+
+.cr-desc-wrap {
+  margin: 0 0 1rem;
+}
+
+.cr-desc {
+  font-size: 22px;
+  color: #33452e;
+  line-height: 1.7;
+  margin: 0;
+  white-space: pre-line;
+}
+
 .cr-desc--collapsed {
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
 .cr-desc-toggle {
-  display: flex; align-items: center; justify-content: center; gap: 4px;
-  width: 100%; box-sizing: border-box; margin-bottom: 10px;
-  background: #f0f9f4; border: 1px solid #dce8d8; border-radius: 8px;
-  padding: 8px 0; cursor: pointer;
-  font-size: 16px; font-weight: 500; color: #3d7a52; font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+  background: #f0f9f4;
+  border: 1px solid #dce8d8;
+  border-radius: 8px;
+  padding: 8px 0;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+  color: #3d7a52;
+  font-family: inherit;
   transition: background 0.15s;
 }
-.cr-desc-toggle:hover { background: #e5f2ea; color: #2a5c3a; }
-.cr-desc-toggle__icon { transition: transform 0.2s; }
-.cr-desc-toggle__icon--open { transform: rotate(180deg); }
 
-.cr-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1rem; }
-.cr-badge { font-size: 12px; padding: 4px 12px; border-radius: 20px; font-weight: 500; }
-.cr-badge--main { background: #f0f9f4; color: #1a5c3a; border: 1px solid #b8d8c4; }
-.cr-badge--warn { background: #fff8e6; color: #7a5800; border: 1px solid #f0d080; }
+.cr-desc-toggle:hover {
+  background: #e5f2ea;
+  color: #2a5c3a;
+}
+
+.cr-desc-toggle__icon {
+  transition: transform 0.2s;
+}
+
+.cr-desc-toggle__icon--open {
+  transform: rotate(180deg);
+}
+
+.cr-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 1rem;
+}
+
+.cr-badge {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+.cr-badge--main {
+  background: #f0f9f4;
+  color: #1a5c3a;
+  border: 1px solid #b8d8c4;
+}
+
+.cr-badge--warn {
+  background: #fff8e6;
+  color: #7a5800;
+  border: 1px solid #f0d080;
+}
 
 /* ── Card ── */
-.cr-card { background: #fff; border: 1px solid #dce8d8; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+.cr-card {
+  background: #fff;
+  border: 1px solid #dce8d8;
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
 /*標題*/
 .cr-card__title {
-  display: flex; align-items: center; gap: 7px; font-size: 18px; font-weight: 600;
-  color: #1a3d28; margin-bottom: 1rem; font-family: 'Noto Serif TC', serif;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a3d28;
+  margin-bottom: 1rem;
+  font-family: 'Noto Serif TC', serif;
 }
-.cr-card__title svg { width: 18px; height: 18px; color: #3d7a52; flex-shrink: 0; }
-.cr-card__hint { font-size: 13px; color: #5a6e54; margin: 0 0 1rem; }
 
-.cr-card--login { text-align: center; }
-.cr-google-btn-main { display: flex; justify-content: center; margin-top: 0.5rem; }
+.cr-card__title svg {
+  width: 18px;
+  height: 18px;
+  color: #3d7a52;
+  flex-shrink: 0;
+}
+
+.cr-card__hint {
+  font-size: 13px;
+  color: #5a6e54;
+  margin: 0 0 1rem;
+}
+
+.cr-card--login {
+  text-align: center;
+}
+
+.cr-google-btn-main {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
 .cr-inapp-hint {
-  text-align: left; font-size: 12px; line-height: 1.6; color: #7a5800;
-  background: #fff8e6; border: 1px solid #f0d080; border-radius: 8px;
-  padding: 9px 12px; margin: 0 0 0.75rem;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #7a5800;
+  background: #fff8e6;
+  border: 1px solid #f0d080;
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin: 0 0 0.75rem;
 }
 
-.cr-card--success { text-align: center; }
+.cr-card--success {
+  text-align: center;
+}
+
 .cr-card__success-icon {
-  width: 48px; height: 48px; border-radius: 50%; background: #e8f5ee;
-  display: flex; align-items: center; justify-content: center; margin: 0 auto 0.75rem;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #e8f5ee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 0.75rem;
 }
-.cr-card__success-icon svg { width: 26px; height: 26px; color: #3d7a52; }
-.cr-card__success-text { font-size: 15px; font-weight: 600; color: #1a3d28; margin: 0 0 4px; }
-.cr-card__success-sub { font-size: 12px; color: #8a9e84; margin: 0 0 1rem; }
-.cr-payment-status {
-  display: inline-block; font-size: 12px; font-weight: 500; color: #7a5800;
-  background: #fff8e6; border: 1px solid #f0d080; border-radius: 20px;
-  padding: 4px 12px; margin: 0 0 1rem;
-}
-.cr-payment-status--paid { color: #1a5c3a; background: #f0f9f4; border-color: #b8d8c4; }
-.cr-payment-box {
-  background: #fafcf9; border: 1px solid #dce8d8; border-radius: 10px;
-  padding: 12px 14px; margin-bottom: 1rem;
-}
-.cr-payment-box label { display: block; font-size: 14px; color: #5a6e54; margin-bottom: 6px; font-weight: 500; }
-.cr-payment-box__empty { font-size: 12px; color: #c0392b; margin: 4px 0 0; }
-.cr-payment-box__info {
-  font-size: 12px; color: #3a4e36; white-space: pre-line; line-height: 1.6;
-  background: #fff; border: 1px dashed #c5d4be; border-radius: 8px; padding: 8px 10px; margin: 8px 0;
-}
-.cr-card__btns { display: flex; gap: 8px; margin-top: 0.5rem; }
 
-.cr-card--closed { text-align: center; color: #8a9e84; font-size: 14px; padding: 2rem 1rem; }
+.cr-card__success-icon svg {
+  width: 26px;
+  height: 26px;
+  color: #3d7a52;
+}
+
+.cr-card__success-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a3d28;
+  margin: 0 0 4px;
+}
+
+.cr-card__success-sub {
+  font-size: 12px;
+  color: #8a9e84;
+  margin: 0 0 1rem;
+}
+
+.cr-payment-status {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #7a5800;
+  background: #fff8e6;
+  border: 1px solid #f0d080;
+  border-radius: 20px;
+  padding: 4px 12px;
+  margin: 0 0 1rem;
+}
+
+.cr-payment-status--paid {
+  color: #1a5c3a;
+  background: #f0f9f4;
+  border-color: #b8d8c4;
+}
+
+.cr-payment-box {
+  background: #fafcf9;
+  border: 1px solid #dce8d8;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 1rem;
+}
+
+.cr-payment-box label {
+  display: block;
+  font-size: 14px;
+  color: #5a6e54;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.cr-payment-box__empty {
+  font-size: 12px;
+  color: #c0392b;
+  margin: 4px 0 0;
+}
+
+.cr-payment-box__auto {
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a5c3a;
+  background: #f0f9f4;
+  border: 1px solid #b8d8c4;
+  border-radius: 20px;
+  padding: 5px 14px;
+  margin: 0;
+}
+
+.cr-payment-box__info {
+  font-size: 12px;
+  color: #3a4e36;
+  white-space: pre-line;
+  line-height: 1.6;
+  background: #fff;
+  border: 1px dashed #c5d4be;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+
+.cr-card__btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 0.5rem;
+}
+
+.cr-card--closed {
+  text-align: center;
+  color: #8a9e84;
+  font-size: 14px;
+  padding: 2rem 1rem;
+}
 
 /* ── Field ── */
-.cr-field { margin-bottom: 1rem; }
-.cr-field:last-of-type { margin-bottom: 0; }
+.cr-field {
+  margin-bottom: 1rem;
+}
+
+.cr-field:last-of-type {
+  margin-bottom: 0;
+}
+
 /*欄位*/
-.cr-field label { display: block; font-size: 18px; color: #5a6e54; margin-bottom: 5px; font-weight: 500; }
+.cr-field label {
+  display: block;
+  font-size: 18px;
+  color: #5a6e54;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
 .cr-field input[type=text],
 .cr-field input[type=date],
 .cr-field textarea,
 .cr-field select {
-  width: 100%; box-sizing: border-box; padding: 8px 12px;
-  border: 1px solid #c5d4be; border-radius: 8px; font-size: 14px;
-  background: #fafcf9; color: #2a2e25; font-family: inherit; outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid #c5d4be;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fafcf9;
+  color: #2a2e25;
+  font-family: inherit;
+  outline: none;
   transition: border-color 0.2s;
 }
-.cr-field input:focus, .cr-field textarea:focus, .cr-field select:focus { border-color: #3d7a52; }
-.cr-field textarea { resize: none; }
-.cr-required { color: #c0392b; }
-.cr-note-input { margin-top: 6px; }
-.cr-choice-group { display: flex; flex-direction: column; gap: 8px; }
-.cr-choice { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #2a2e25; }
+
+.cr-field input:focus, .cr-field textarea:focus, .cr-field select:focus {
+  border-color: #3d7a52;
+}
+
+.cr-field textarea {
+  resize: none;
+}
+
+.cr-required {
+  color: #c0392b;
+}
+
+.cr-note-input {
+  margin-top: 6px;
+}
+
+.cr-choice-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cr-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #2a2e25;
+}
 
 /* ── Error ── */
 .cr-error {
-  display: flex; align-items: center; gap: 8px; background: #fdf0f0;
-  border: 1px solid #f5c6c6; border-radius: 10px; padding: 11px 14px;
-  margin-bottom: 1rem; font-size: 13px; color: #c0392b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fdf0f0;
+  border: 1px solid #f5c6c6;
+  border-radius: 10px;
+  padding: 11px 14px;
+  margin-bottom: 1rem;
+  font-size: 13px;
+  color: #c0392b;
 }
-.cr-error__icon { width: 16px; height: 16px; flex-shrink: 0; }
-.cr-error span { flex: 1; line-height: 1.5; }
-.cr-error__close { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 14px; padding: 0 2px; opacity: 0.6; }
-.cr-error__close:hover { opacity: 1; }
-.cr-err-fade-enter-active, .cr-err-fade-leave-active { transition: opacity 0.2s, transform 0.2s; }
-.cr-err-fade-enter-from, .cr-err-fade-leave-to { opacity: 0; transform: translateY(-4px); }
+
+.cr-error__icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.cr-error span {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.cr-error__close {
+  background: none;
+  border: none;
+  color: #c0392b;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  opacity: 0.6;
+}
+
+.cr-error__close:hover {
+  opacity: 1;
+}
+
+.cr-err-fade-enter-active, .cr-err-fade-leave-active {
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.cr-err-fade-enter-from, .cr-err-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
 
 /* ── Buttons ── */
 .cr-submit {
-  flex: 1; padding: 13px; background: #3d7a52; color: #fff; border: none; border-radius: 10px;
-  font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
-  transition: background 0.18s; display: flex; align-items: center; justify-content: center; gap: 8px;
+  flex: 1;
+  padding: 13px;
+  background: #3d7a52;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.18s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
-.cr-submit:hover:not(:disabled) { background: #2a5c3a; }
-.cr-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.cr-submit:hover:not(:disabled) {
+  background: #2a5c3a;
+}
+
+.cr-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .cr-spinner {
-  width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4);
-  border-top-color: #fff; border-radius: 50%; animation: cr-spin 0.7s linear infinite;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: cr-spin 0.7s linear infinite;
 }
-@keyframes cr-spin { to { transform: rotate(360deg); } }
+
+@keyframes cr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 .cr-btn {
-  flex: 1; padding: 11px; border-radius: 10px; font-size: 14px; font-weight: 500;
-  cursor: pointer; font-family: inherit; transition: background 0.15s;
+  flex: 1;
+  padding: 11px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
 }
-.cr-btn--outline { background: #fafcf9; border: 1.5px solid #c5d4be; color: #3a4e36; }
-.cr-btn--outline:hover { background: #f0f9f4; }
-.cr-btn--danger { background: #fdf0f0; border: 1.5px solid #f5c6c6; color: #c0392b; }
-.cr-btn--danger:hover:not(:disabled) { background: #fbe0e0; }
-.cr-btn--danger:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.cr-btn--outline {
+  background: #fafcf9;
+  border: 1.5px solid #c5d4be;
+  color: #3a4e36;
+}
+
+.cr-btn--outline:hover {
+  background: #f0f9f4;
+}
+
+.cr-btn--danger {
+  background: #fdf0f0;
+  border: 1.5px solid #f5c6c6;
+  color: #c0392b;
+}
+
+.cr-btn--danger:hover:not(:disabled) {
+  background: #fbe0e0;
+}
+
+.cr-btn--danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 /* ── Modal ── */
 .cr-modal-backdrop {
-  position: fixed; inset: 0; background: rgba(0,0,0,.45);
-  display: flex; align-items: center; justify-content: center; z-index: 200; padding: 1rem;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 1rem;
 }
-.cr-modal { background: #fff; border-radius: 14px; padding: 1.5rem; width: 300px; box-shadow: 0 16px 48px rgba(0,0,0,0.2); }
-.cr-modal--success { text-align: center; }
-.cr-modal__title { font-size: 15px; font-weight: 600; color: #1a3d28; margin: 0 0 0.5rem; font-family: 'Noto Serif TC', serif; }
-.cr-modal__content { font-size: 13px; color: #3a4e36; margin: 0 0 1rem; }
+
+.cr-modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 1.5rem;
+  width: 300px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+}
+
+.cr-modal--success {
+  text-align: center;
+}
+
+.cr-modal__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a3d28;
+  margin: 0 0 0.5rem;
+  font-family: 'Noto Serif TC', serif;
+}
+
+.cr-modal__content {
+  font-size: 13px;
+  color: #3a4e36;
+  margin: 0 0 1rem;
+}
+
 .cr-modal__payment {
-  text-align: left; background: #fafcf9; border: 1px solid #dce8d8; border-radius: 10px;
-  padding: 12px 14px; margin: 0 0 1rem;
+  text-align: left;
+  background: #fafcf9;
+  border: 1px solid #dce8d8;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 0 0 1rem;
 }
-.cr-modal__payment-amount { font-size: 13px; font-weight: 600; color: #1a3d28; margin: 0 0 6px; }
+
+.cr-modal__payment-amount {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a3d28;
+  margin: 0 0 6px;
+}
+
 .cr-modal__payment-info {
-  font-size: 12px; color: #3a4e36; white-space: pre-line; line-height: 1.6;
-  background: #fff; border: 1px dashed #c5d4be; border-radius: 8px; padding: 8px 10px; margin: 0 0 8px;
+  font-size: 12px;
+  color: #3a4e36;
+  white-space: pre-line;
+  line-height: 1.6;
+  background: #fff;
+  border: 1px dashed #c5d4be;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 0 0 8px;
 }
+
 .cr-modal__payment-note {
-  width: 100%; box-sizing: border-box; padding: 7px 10px; margin-bottom: 8px;
-  border: 1px solid #c5d4be; border-radius: 8px; font-size: 13px;
-  background: #fff; color: #2a2e25; font-family: inherit; outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  margin-bottom: 8px;
+  border: 1px solid #c5d4be;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fff;
+  color: #2a2e25;
+  font-family: inherit;
+  outline: none;
 }
+
 .cr-modal__payment-btn {
-  width: 100%; padding: 8px; border: 1.5px solid #3d7a52; border-radius: 8px; cursor: pointer;
-  font-size: 13px; background: #fff; color: #3d7a52; font-family: inherit; transition: background 0.15s;
+  width: 100%;
+  padding: 8px;
+  border: 1.5px solid #3d7a52;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  background: #fff;
+  color: #3d7a52;
+  font-family: inherit;
+  transition: background 0.15s;
 }
-.cr-modal__payment-btn:hover:not(:disabled) { background: #f0f9f4; }
-.cr-modal__payment-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.cr-modal__payment-hint { font-size: 11px; color: #8a9e84; margin: 6px 0 0; }
+
+.cr-modal__payment-btn:hover:not(:disabled) {
+  background: #f0f9f4;
+}
+
+.cr-modal__payment-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cr-modal__payment-hint {
+  font-size: 11px;
+  color: #8a9e84;
+  margin: 6px 0 0;
+}
+
 .cr-modal__success-icon {
-  width: 48px; height: 48px; border-radius: 50%; background: #e8f5ee;
-  display: flex; align-items: center; justify-content: center; margin: 0 auto 0.75rem;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #e8f5ee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 0.75rem;
 }
-.cr-modal__success-icon svg { width: 26px; height: 26px; color: #3d7a52; }
-.cr-modal__btns { display: flex; gap: 8px; }
+
+.cr-modal__success-icon svg {
+  width: 26px;
+  height: 26px;
+  color: #3d7a52;
+}
+
+.cr-modal__btns {
+  display: flex;
+  gap: 8px;
+}
+
 .cr-modal__btns button {
-  flex: 1; padding: 9px; border: 1.5px solid #3d7a52; border-radius: 8px; cursor: pointer;
-  font-size: 14px; background: #3d7a52; color: #fff; font-family: inherit; transition: background 0.15s;
+  flex: 1;
+  padding: 9px;
+  border: 1.5px solid #3d7a52;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  background: #3d7a52;
+  color: #fff;
+  font-family: inherit;
+  transition: background 0.15s;
 }
-.cr-modal__btns button:hover { background: #2a5c3a; }
-.cr-modal-fade-enter-active, .cr-modal-fade-leave-active { transition: opacity 0.2s; }
-.cr-modal-fade-enter-from, .cr-modal-fade-leave-to { opacity: 0; }
+
+.cr-modal__btns button:hover {
+  background: #2a5c3a;
+}
+
+.cr-modal-fade-enter-active, .cr-modal-fade-leave-active {
+  transition: opacity 0.2s;
+}
+
+.cr-modal-fade-enter-from, .cr-modal-fade-leave-to {
+  opacity: 0;
+}
 </style>
