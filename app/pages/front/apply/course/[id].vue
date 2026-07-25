@@ -2,7 +2,7 @@
 // 專案holy 位置front/apply/course/[id].vue
 definePageMeta({ layout: false })
 
-import { ref, computed, reactive, onMounted, nextTick } from 'vue'
+import { ref, computed, reactive, onMounted, nextTick, watch } from 'vue'
 import { useCourseRegistrationStore } from '~/stores/courseRegistration.js'
 import { useCustomerStore } from '~/stores/customer.js'
 
@@ -39,6 +39,15 @@ const isFieldVisible = (f) => {
 // 條件顯示的欄位（例如「單次上課日選擇」要選了「單次」才出現）在這裡統一過濾，
 // 表單渲染跟必填檢查都用這份，條件不成立就不會被要求填答
 const visibleAnswerFields = computed(() => answerFields.value.filter(isFieldVisible))
+// 價格選項的顯示條件跟表單欄位共用同一套邏輯，依「課程選擇」之類的欄位答案決定
+// 該出現哪些價格（例如選「單次」只出現體驗價，選「整月」才出現 8 堂優惠）
+const isPriceOptionVisible = (p) => {
+  if (!p.dependsOn) return true
+  const v = answers[p.dependsOn]
+  if (Array.isArray(v)) return v.includes(p.dependsOnValue)
+  return v === p.dependsOnValue
+}
+const visiblePriceOptions = computed(() => (course.value?.priceOptions ?? []).filter(isPriceOptionVisible))
 const isDeadlinePassed = computed(() => {
   if (!course.value?.registrationDeadline) return false
   return new Date(course.value.registrationDeadline.replace(' ', 'T')) < new Date()
@@ -141,6 +150,13 @@ const editing = ref(false)
 // ── 繳費（人工核對版）────────────────────────────────────────
 const selectedPriceOptionId = ref('')
 const paymentNoteInput = ref('')
+// 「課程選擇」之類的欄位改答案時，可選的價格清單會跟著變，原本選的價格如果
+// 不再符合條件就清掉，避免送出時金額跟課程選擇對不起來
+watch(visiblePriceOptions, (list) => {
+  if (selectedPriceOptionId.value && !list.some(p => p.id === selectedPriceOptionId.value)) {
+    selectedPriceOptionId.value = ''
+  }
+})
 
 const resetAnswers = () => {
   answerFields.value.forEach(f => {
@@ -199,8 +215,11 @@ const errorMsg = ref('')
 const successModal = ref(false)
 
 const validate = () => {
-  if (course.value?.paymentEnabled && !selectedPriceOptionId.value) {
-    return '請選擇報名價格'
+  if (course.value?.paymentEnabled) {
+    if (!selectedPriceOptionId.value) return '請選擇報名價格'
+    if (!visiblePriceOptions.value.some(p => p.id === selectedPriceOptionId.value)) {
+      return '價格選項跟所選課程不符，請重新選擇'
+    }
   }
   for (const f of visibleAnswerFields.value) {
     if (!f.required) continue
@@ -233,6 +252,24 @@ const submit = async () => {
     errorMsg.value = '報名失敗，請稍後再試'
   } finally {
     submitting.value = false
+  }
+}
+
+// 報名成功 Modal 裡補填繳費備註（例如匯款後五碼）：直接重打一次報名 API，
+// 因為身份/價格都沒變，後端會落在「已存在的報名」那個分支只更新備註，不會
+// 動到 paid/paidAt（那個只有後台核對收款才會改）
+const paymentNoteSaving = ref(false)
+const submitPaymentNote = async () => {
+  paymentNoteSaving.value = true
+  try {
+    const payment = { priceOptionId: selectedPriceOptionId.value, paymentNote: paymentNoteInput.value }
+    const res = await store.submitRegistration(courseId, { ...answers }, payment)
+    if (res.error) errorMsg.value = res.error
+    else await fetchCourseData()
+  } catch {
+    errorMsg.value = '更新繳費備註失敗，請稍後再試'
+  } finally {
+    paymentNoteSaving.value = false
   }
 }
 
@@ -403,26 +440,6 @@ const descExpanded = ref(false)
               </span>
                 </div>
 
-                <div v-if="course.paymentEnabled" class="cr-payment-box">
-                  <label>選擇報名價格<span class="cr-required"> *</span></label>
-                  <div class="cr-choice-group">
-                    <label v-for="p in course.priceOptions" :key="p.id" class="cr-choice">
-                      <input v-model="selectedPriceOptionId" type="radio" :value="p.id">
-                      {{ p.label }}（${{ p.amount }}）
-                    </label>
-                  </div>
-                  <p v-if="!course.priceOptions?.length" class="cr-payment-box__empty">
-                    這堂課還沒有設定價格選項，請聯繫承辦人員。
-                  </p>
-                  <p v-if="course.paymentInfo" class="cr-payment-box__info">{{ course.paymentInfo }}</p>
-                  <input
-                      v-model="paymentNoteInput"
-                      type="text"
-                      placeholder="繳費備註（選填，例如匯款後五碼）"
-                      class="cr-note-input"
-                  >
-                </div>
-
                 <div v-for="f in visibleAnswerFields" :key="f.id" class="cr-field">
                   <label>{{ f.label }}<span v-if="f.required" class="cr-required"> *</span></label>
 
@@ -454,6 +471,21 @@ const descExpanded = ref(false)
                       placeholder="其他，請說明"
                       class="cr-note-input"
                   >
+                </div>
+
+                <!-- 價格放在自訂欄位後面：這樣「課程選擇」選好之後，價格選項才能照著
+                     顯示條件正確篩選（例如選「單次」只出現體驗價） -->
+                <div v-if="course.paymentEnabled" class="cr-payment-box">
+                  <label>選擇報名價格<span class="cr-required"> *</span></label>
+                  <div class="cr-choice-group">
+                    <label v-for="p in visiblePriceOptions" :key="p.id" class="cr-choice">
+                      <input v-model="selectedPriceOptionId" type="radio" :value="p.id">
+                      {{ p.label }}（${{ p.amount }}）
+                    </label>
+                  </div>
+                  <p v-if="!visiblePriceOptions.length" class="cr-payment-box__empty">
+                    {{ course.priceOptions?.length ? '請先完成上面的選擇，才會顯示可以選的價格' : '這堂課還沒有設定價格選項，請聯繫承辦人員' }}
+                  </p>
                 </div>
 
                 <Transition name="cr-err-fade">
@@ -490,6 +522,32 @@ const descExpanded = ref(false)
             </div>
             <h3 class="cr-modal__title">報名成功！</h3>
             <p class="cr-modal__content">{{ course?.name }}</p>
+
+            <!-- 繳費資訊放在報名成功之後才顯示：先確定報名成立，再引導去繳費 -->
+            <div v-if="course?.paymentEnabled" class="cr-modal__payment">
+              <p class="cr-modal__payment-amount">
+                {{ course.myRegistration?.priceLabel || '尚未選擇價格' }}
+                <template v-if="course.myRegistration?.amount">・應繳 ${{ course.myRegistration.amount }}</template>
+              </p>
+              <p v-if="course.paymentInfo" class="cr-modal__payment-info">{{ course.paymentInfo }}</p>
+              <input
+                  v-model="paymentNoteInput"
+                  type="text"
+                  placeholder="繳費備註（選填，例如匯款後五碼）"
+                  class="cr-modal__payment-note"
+              >
+              <button
+                  class="cr-modal__payment-btn"
+                  :disabled="paymentNoteSaving"
+                  @click="submitPaymentNote"
+              >
+                {{ paymentNoteSaving ? '儲存中…' : '儲存繳費備註' }}
+              </button>
+              <p class="cr-modal__payment-hint">
+                {{ course.myRegistration?.paid ? '後台已核對收到款項' : '匯款後請耐心等候後台核對，不影響報名資格' }}
+              </p>
+            </div>
+
             <div class="cr-modal__btns">
               <button class="confirm" @click="successModal = false">好的</button>
             </div>
@@ -771,6 +829,27 @@ const descExpanded = ref(false)
 .cr-modal--success { text-align: center; }
 .cr-modal__title { font-size: 15px; font-weight: 600; color: #1a3d28; margin: 0 0 0.5rem; font-family: 'Noto Serif TC', serif; }
 .cr-modal__content { font-size: 13px; color: #3a4e36; margin: 0 0 1rem; }
+.cr-modal__payment {
+  text-align: left; background: #fafcf9; border: 1px solid #dce8d8; border-radius: 10px;
+  padding: 12px 14px; margin: 0 0 1rem;
+}
+.cr-modal__payment-amount { font-size: 13px; font-weight: 600; color: #1a3d28; margin: 0 0 6px; }
+.cr-modal__payment-info {
+  font-size: 12px; color: #3a4e36; white-space: pre-line; line-height: 1.6;
+  background: #fff; border: 1px dashed #c5d4be; border-radius: 8px; padding: 8px 10px; margin: 0 0 8px;
+}
+.cr-modal__payment-note {
+  width: 100%; box-sizing: border-box; padding: 7px 10px; margin-bottom: 8px;
+  border: 1px solid #c5d4be; border-radius: 8px; font-size: 13px;
+  background: #fff; color: #2a2e25; font-family: inherit; outline: none;
+}
+.cr-modal__payment-btn {
+  width: 100%; padding: 8px; border: 1.5px solid #3d7a52; border-radius: 8px; cursor: pointer;
+  font-size: 13px; background: #fff; color: #3d7a52; font-family: inherit; transition: background 0.15s;
+}
+.cr-modal__payment-btn:hover:not(:disabled) { background: #f0f9f4; }
+.cr-modal__payment-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.cr-modal__payment-hint { font-size: 11px; color: #8a9e84; margin: 6px 0 0; }
 .cr-modal__success-icon {
   width: 48px; height: 48px; border-radius: 50%; background: #e8f5ee;
   display: flex; align-items: center; justify-content: center; margin: 0 auto 0.75rem;
