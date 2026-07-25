@@ -1,10 +1,10 @@
 <script setup>
 // 專案holy 位置front/apply/course/[id].vue
-definePageMeta({layout: false})
+definePageMeta({ layout: false })
 
-import {ref, computed, reactive, onMounted, nextTick} from 'vue'
-import {useCourseRegistrationStore} from '~/stores/courseRegistration.js'
-import {useCustomerStore} from '~/stores/customer.js'
+import { ref, computed, reactive, onMounted, nextTick } from 'vue'
+import { useCourseRegistrationStore } from '~/stores/courseRegistration.js'
+import { useCustomerStore } from '~/stores/customer.js'
 
 const route = useRoute()
 const courseId = route.params.id
@@ -70,9 +70,29 @@ const initGoogle = () => {
   window.google.accounts.id.initialize({
     client_id: GOOGLE_CLIENT_ID.value,
     callback: handleCredential,
-    auto_select: false,
+    // auto_select: 如果這台裝置/瀏覽器只有一個 Google 帳號、且之前已經對這個網站按過
+    // 「繼續使用」，就會直接免點擊自動登入；否則會跳出 One Tap 小卡片讓使用者點一下，
+    // 不用整頁跳轉到 Google 登入頁。第一次一定還是要使用者確認一次，不可能完全無感。
+    auto_select: true,
+    // Chrome 正在把 One Tap 底層换成瀏覽器原生的 FedCM API（第三方 cookie 淘汰後的替代
+    // 方案），及早加這個 flag 避免之後被強制切換時行為跑掉／console 噴警告。
+    use_fedcm_for_prompt: true,
   })
 }
+// 嘗試觸發 One Tap／自動登入：已經登入的人不用再打擾；LINE／FB 等 App 內建瀏覽器
+// Google 官方直接擋掉登入（會顯示「這個瀏覽器不安全」），One Tap 在那種環境下本來就
+// 不會顯示，呼叫了也只是安靜地什麼都不做，所以這裡乾脆不呼叫，改用下面的提示 banner。
+const attemptOneTap = () => {
+  if (!window.google || customer.value || isInAppBrowser.value) return
+  window.google.accounts.id.prompt()
+}
+// 偵測是不是從 LINE / FB / Instagram / 微信 這類 App 內建瀏覽器打開（報名連結常常是
+// 從 LINE 分享出去的，見 CourseShareController 的分享頁）。這類瀏覽器 Google 會直接
+// 拒絕登入，自動登入／一般登入按鈕都沒用，只能請使用者換成手機預設瀏覽器打開。
+const isInAppBrowser = computed(() => {
+  if (typeof navigator === 'undefined') return false
+  return /Line\/|FBAN|FBAV|Instagram|MicroMessenger/i.test(navigator.userAgent)
+})
 const renderGoogleBtn = (elId) => {
   if (!window.google) return
   const el = document.getElementById(elId)
@@ -159,13 +179,15 @@ onMounted(async () => {
     script.async = true
     script.defer = true
     script.onload = () => {
-      initGoogle();
+      initGoogle()
       nextTick(() => renderGoogleBtn('cr-google-btn-main'))
+      attemptOneTap()
     }
     document.head.appendChild(script)
   } else if (window.google) {
     initGoogle()
     nextTick(() => renderGoogleBtn('cr-google-btn-main'))
+    attemptOneTap()
   }
 })
 
@@ -345,6 +367,10 @@ const descExpanded = ref(false)
                 </svg>
                 請先登入才能報名
               </div>
+              <p v-if="isInAppBrowser" class="cr-inapp-hint">
+                偵測到您可能是從 LINE／FB 等 App 內的瀏覽器打開這個頁面，Google 登入在這類瀏覽器裡可能無法使用。
+                請點右上角「⋯」選單，選擇「在瀏覽器中開啟」後再登入。
+              </p>
               <p class="cr-card__hint">用 Google 帳號登入後即可填寫報名表單</p>
               <div id="cr-google-btn-main" class="cr-google-btn-main"></div>
               <p v-if="loginError" class="cr-login-panel__error">{{ loginError }}</p>
@@ -932,6 +958,18 @@ const descExpanded = ref(false)
   display: flex;
   justify-content: center;
   margin-top: 0.5rem;
+}
+
+.cr-inapp-hint {
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #7a5800;
+  background: #fff8e6;
+  border: 1px solid #f0d080;
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin: 0 0 0.75rem;
 }
 
 .cr-card--success {
