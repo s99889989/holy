@@ -99,6 +99,19 @@ export const useCourseRegistrationStore = defineStore('courseRegistration', {
         body: JSON.stringify(priceOptions)
       })
     },
+    async uploadPaymentInfoImage(id, file) {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(`${this._base()}/${id}/payment-info-image`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData
+      })
+      return await res.text()
+    },
+    async removePaymentInfoImage(id) {
+      await fetch(`${this._base()}/${id}/payment-info-image`, { method: 'DELETE', credentials: 'include' })
+    },
     // fields: 完整陣列覆寫 [{ id, label, type, required, options, order }]
     async updateFields(id, fields) {
       await fetch(`${this._base()}/${id}/fields`, {
@@ -167,6 +180,25 @@ export const useCourseRegistrationStore = defineStore('courseRegistration', {
     // 核對收款：切換某一筆報名的已繳費狀態
     async togglePaid(id, regId) {
       await fetch(`${this._base()}/${id}/registration/${regId}/toggle-paid`, { method: 'PUT', credentials: 'include' })
+      await this.fetchCourse(id)
+    },
+    // dates: 完整陣列覆寫 ["6/30", "7/1", ...]
+    async updateSessionDates(id, dates) {
+      await fetch(`${this._base()}/${id}/session-dates`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dates })
+      })
+    },
+    // 切換某一筆報名在某個上課日期的出席狀態
+    async toggleAttendance(id, regId, date) {
+      await fetch(`${this._base()}/${id}/registration/${regId}/attendance`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date })
+      })
       await this.fetchCourse(id)
     },
     async reset(id) {
