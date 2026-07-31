@@ -1,474 +1,488 @@
 <script setup>
-definePageMeta({ layout: false })
-useSiteHead({
-  title: '豆製品訂購 | 台東聖母健康農莊',
-  description: '聖母健康農莊每週新鮮現做豆漿與豆腐，歡迎線上預訂。',
-  ogTitle: '豆製品訂購 | 台東聖母健康農莊',
-  ogDescription: '聖母健康農莊每週新鮮現做豆漿與豆腐，歡迎線上預訂。',
-  ogImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
-  twitterImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
-  ogUrl: 'https://holymotherfarm.netlify.app/front/order/soybeans',
-})
+  definePageMeta({ layout: false })
+  useSiteHead({
+    title: '豆製品訂購 | 台東聖母健康農莊',
+    description: '聖母健康農莊每週新鮮現做豆漿與豆腐，歡迎線上預訂。',
+    ogTitle: '豆製品訂購 | 台東聖母健康農莊',
+    ogDescription: '聖母健康農莊每週新鮮現做豆漿與豆腐，歡迎線上預訂。',
+    ogImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
+    twitterImage: 'https://holymotherfarm.netlify.app/images/order/soybeans_og.jpg',
+    ogUrl: 'https://holymotherfarm.netlify.app/front/order/soybeans',
+  })
 
-import { ref, computed, onMounted, nextTick } from 'vue'
-import { useCommonStore } from '~/stores/common.js'
-import { useCustomerStore } from '~/stores/customer.js'
+  import { ref, computed, onMounted, nextTick } from 'vue'
+  import { useCommonStore } from '~/stores/common.js'
+  import { useCustomerStore } from '~/stores/customer.js'
 
-const router = useRouter()
+  const router = useRouter()
 
-const commonStore  = useCommonStore()
-const customerStore = useCustomerStore()
-const BASE         = computed(() => commonStore.data.main_url + '/holy/customer')
-const SOYBEAN_BASE = computed(() => commonStore.data.main_url + '/holy/soybean')
-const GOOGLE_CLIENT_ID = computed(() => commonStore.data.google_client_id)
+  const commonStore  = useCommonStore()
+  const customerStore = useCustomerStore()
+  const BASE         = computed(() => commonStore.data.main_url + '/holy/customer')
+  const SOYBEAN_BASE = computed(() => commonStore.data.main_url + '/holy/soybean')
+  const GOOGLE_CLIENT_ID = computed(() => commonStore.data.google_client_id)
 
-const customer = computed(() => customerStore.customer)
+  const customer = computed(() => customerStore.customer)
 
-// ── 營業日設定（動態抓後端，取代寫死的週二／週五）───────────────
-// ISO 星期數字：1=一 2=二 3=三 4=四 5=五 6=六 7=日
-const DOW_LABEL = { 1: '週一', 2: '週二', 3: '週三', 4: '週四', 5: '週五', 6: '週六', 7: '週日' }
-const DOW_CODE  = { 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat', 7: 'sun' }
+  // ── 營業日設定（動態抓後端，取代寫死的週二／週五）───────────────
+  // ISO 星期數字：1=一 2=二 3=三 4=四 5=五 6=六 7=日
+  const DOW_LABEL = { 1: '週一', 2: '週二', 3: '週三', 4: '週四', 5: '週五', 6: '週六', 7: '週日' }
+  const DOW_CODE  = { 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat', 7: 'sun' }
 
-const businessDays = ref([2, 5]) // 預設值（後端還沒回來前先顯示），實際以後端設定為準
+  const businessDays = ref([2, 5]) // 目前生效中的營業日（預設值，後端還沒回來前先顯示；僅供頁首文案等「不分週次」的場合使用）
+  const businessDaysSchedule = ref([]) // 完整排程 [{ effectiveFrom, businessDays }]，含未來已排定但尚未生效的設定
 
-async function fetchBusinessDays() {
-  try {
-    const res  = await fetch(`${SOYBEAN_BASE.value}/settings/business-days`)
-    const data = await res.json()
-    if (Array.isArray(data.businessDays) && data.businessDays.length > 0) {
-      businessDays.value = data.businessDays
+  async function fetchBusinessDays() {
+    try {
+      const res  = await fetch(`${SOYBEAN_BASE.value}/settings/business-days-schedule`)
+      const data = await res.json()
+      businessDaysSchedule.value = Array.isArray(data.schedule) ? data.schedule : []
+      if (Array.isArray(data.currentBusinessDays) && data.currentBusinessDays.length > 0) {
+        businessDays.value = data.currentBusinessDays
+      }
+    } catch {}
+  }
+
+  // 依「實際日期」（YYYY-MM-DD）找出當天適用的營業日設定：在排程中找生效日 <= 該日期、且最接近的一筆；
+  // 找不到（例如排程還沒抓回來、或日期早於最舊的排程）就退回目前生效中的設定。
+  function businessDaysOnDate(dateKey) {
+    const applicable = businessDaysSchedule.value
+            .filter(s => s.effectiveFrom <= dateKey)
+            .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0]
+    return applicable ? applicable.businessDays : businessDays.value
+  }
+
+  // ── 日期工具 ────────────────────────────────────────────────────
+  // dow 為 ISO 星期數字（1=一...7=日）；JS 的 Date.getDay() 是 0=日...6=六，
+  // 剛好 1~6 一致，只有星期日（ISO=7）要轉成 JS 的 0，故用 dow % 7。
+  // offsetWeeks：再往後推幾週（0＝最近的一次，1＝下週，2＝下下週...）
+  function getNext(dow, offsetWeeks = 0) {
+    const now = new Date()
+    const base = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const jsDow = dow % 7
+    const diff = ((jsDow - base.getDay() + 7) % 7) || 7
+    const n = new Date(base)
+    n.setDate(base.getDate() + diff + offsetWeeks * 7)
+    return n
+  }
+  function fmt(d) { return `${d.getMonth() + 1}月${d.getDate()}日` }
+  function toDateStr(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  }
+
+  // 取貨「週次」：0＝最近一次，1＝下週，2＝下下週...，最多往後推 MAX_WEEK_OFFSET 週（約兩個月）
+  const MAX_WEEK_OFFSET = 8
+  const weekOffset = ref(0)
+  const weekOffsetLabel = computed(() => {
+    const presetLabels = ['本週', '下週', '下下週']
+    if (weekOffset.value < presetLabels.length) return presetLabels[weekOffset.value]
+    const opt = pickupDayOptions.value[0]
+    return opt ? `${opt.dateStr} 那週` : `第 ${weekOffset.value + 1} 週`
+  })
+
+  // 依「每個候選日期各自適用的營業日排程」動態算出可選的取貨日清單（每筆含代碼／中文標籤／日期）
+  // 不再整週套用同一組星期幾：例如排定 8/1 起改成週二、週五，8/1（含）之後的週次就會照新設定顯示，之前的週次仍照舊設定顯示。
+  const pickupDayOptions = computed(() => {
+    const opts = []
+    for (let dow = 1; dow <= 7; dow++) {
+      const date = getNext(dow, weekOffset.value)
+      const dateKey = toDateStr(date)
+      if (!businessDaysOnDate(dateKey).includes(dow)) continue
+      opts.push({
+        dow,
+        code:    DOW_CODE[dow] || 'tue',
+        label:   DOW_LABEL[dow] || '',
+        dateStr: fmt(date),
+        dateKey,
+      })
     }
-  } catch {}
-}
+    return opts.sort((a, b) => a.dateKey.localeCompare(b.dateKey))  // ← 依日期由近到遠排序
+  })
 
-// ── 日期工具 ────────────────────────────────────────────────────
-// dow 為 ISO 星期數字（1=一...7=日）；JS 的 Date.getDay() 是 0=日...6=六，
-// 剛好 1~6 一致，只有星期日（ISO=7）要轉成 JS 的 0，故用 dow % 7。
-// offsetWeeks：再往後推幾週（0＝最近的一次，1＝下週，2＝下下週...）
-function getNext(dow, offsetWeeks = 0) {
-  const now = new Date()
-  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const jsDow = dow % 7
-  const diff = ((jsDow - base.getDay() + 7) % 7) || 7
-  const n = new Date(base)
-  n.setDate(base.getDate() + diff + offsetWeeks * 7)
-  return n
-}
-function fmt(d) { return `${d.getMonth() + 1}月${d.getDate()}日` }
-function toDateStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-}
+  // 給頁首文案用，例如「每週二、四新鮮現做」（跟週次無關，只看星期幾）
+  const businessDaysLabel = computed(() =>
+          businessDays.value.map(dow => (DOW_LABEL[dow] || '').replace('週', '')).join('、')
+  )
 
-// 取貨「週次」：0＝最近一次，1＝下週，2＝下下週...，最多往後推 MAX_WEEK_OFFSET 週（約兩個月）
-const MAX_WEEK_OFFSET = 8
-const weekOffset = ref(0)
-const weekOffsetLabel = computed(() => {
-  const presetLabels = ['本週', '下週', '下下週']
-  if (weekOffset.value < presetLabels.length) return presetLabels[weekOffset.value]
-  const opt = pickupDayOptions.value[0]
-  return opt ? `${opt.dateStr} 那週` : `第 ${weekOffset.value + 1} 週`
-})
+  // ── 休息日 ──────────────────────────────────────────────────────
+  const closedDates = ref([])
+  function isDateClosed(dateKey) { return closedDates.value.includes(dateKey) }
 
-// 依目前營業日設定＋選擇的週次，動態算出可選的取貨日清單（每筆含代碼／中文標籤／日期）
-const pickupDayOptions = computed(() =>
-    businessDays.value
-        .map((dow) => {
-          const date = getNext(dow, weekOffset.value)
-          return {
-            dow,
-            code:    DOW_CODE[dow] || 'tue',
-            label:   DOW_LABEL[dow] || '',
-            dateStr: fmt(date),
-            dateKey: toDateStr(date),
-          }
-        })
-        .sort((a, b) => a.dateKey.localeCompare(b.dateKey))  // ← 依日期由近到遠排序
-)
+  const closedMap = computed(() => {
+    const m = {}
+    for (const opt of pickupDayOptions.value) m[opt.code] = isDateClosed(opt.dateKey)
+    return m
+  })
+  const allDaysClosed = computed(() =>
+          pickupDayOptions.value.length > 0 && pickupDayOptions.value.every(o => closedMap.value[o.code])
+  )
 
-// 給頁首文案用，例如「每週二、四新鮮現做」（跟週次無關，只看星期幾）
-const businessDaysLabel = computed(() =>
-    businessDays.value.map(dow => (DOW_LABEL[dow] || '').replace('週', '')).join('、')
-)
-
-// ── 休息日 ──────────────────────────────────────────────────────
-const closedDates = ref([])
-function isDateClosed(dateKey) { return closedDates.value.includes(dateKey) }
-
-const closedMap = computed(() => {
-  const m = {}
-  for (const opt of pickupDayOptions.value) m[opt.code] = isDateClosed(opt.dateKey)
-  return m
-})
-const allDaysClosed = computed(() =>
-    pickupDayOptions.value.length > 0 && pickupDayOptions.value.every(o => closedMap.value[o.code])
-)
-
-async function fetchClosedDates() {
-  try {
-    const res  = await fetch(`${SOYBEAN_BASE.value}/admin/settings/closed-dates`)
-    const data = await res.json()
-    closedDates.value = Array.isArray(data.closedDates) ? data.closedDates : []
-    // 若已選的日期變成休息日，自動從已選清單中移除
-    selDates.value = selDates.value.filter(dateKey => !isDateClosed(dateKey))
-    if (selDates.value.length === 0) {
-      const alt = pickupDayOptions.value.find(o => !isDateClosed(o.dateKey))
-      if (alt) { selDates.value = [alt.dateKey]; ensureDateQty(alt.dateKey) }
-    }
-  } catch {}
-}
-
-// ── 狀態 ────────────────────────────────────────────────────────
-// selDates：目前已選的取貨「實際日期」（YYYY-MM-DD，可複選，例如同一星期跨多週也各自獨立）
-// dateQty：每個日期各自的數量，例如 { '2026-08-04': { soymilkQty: 2, tofuQty: 0 }, ... }
-const selDates = ref([])
-const dateQty  = ref({})
-const name     = ref('')
-const contact  = ref('')
-const remark   = ref('')
-
-// 依日期字串（YYYY-MM-DD）反推星期標籤／代碼，用於整月加入、成功訊息等場合
-function dateInfo(dateKey) {
-  const d = new Date(dateKey + 'T00:00:00')
-  const jsDow = d.getDay()
-  const dow   = jsDow === 0 ? 7 : jsDow
-  return { dateKey, dow, code: DOW_CODE[dow] || 'tue', label: DOW_LABEL[dow] || '', dateStr: fmt(d) }
-}
-
-// 已選日期由近到遠排序後的清單，畫面顯示用
-const sortedSelDates = computed(() => [...selDates.value].sort())
-
-function ensureDateQty(dateKey) {
-  if (!dateQty.value[dateKey]) dateQty.value[dateKey] = { soymilkQty: 0, tofuQty: 0 }
-}
-function toggleDate(dateKey) {
-  if (isDateClosed(dateKey)) return
-  const idx = selDates.value.indexOf(dateKey)
-  if (idx >= 0) {
-    selDates.value.splice(idx, 1)
-  } else {
-    selDates.value.push(dateKey)
-    ensureDateQty(dateKey)
+  async function fetchClosedDates() {
+    try {
+      const res  = await fetch(`${SOYBEAN_BASE.value}/admin/settings/closed-dates`)
+      const data = await res.json()
+      closedDates.value = Array.isArray(data.closedDates) ? data.closedDates : []
+      // 若已選的日期變成休息日，自動從已選清單中移除
+      selDates.value = selDates.value.filter(dateKey => !isDateClosed(dateKey))
+      if (selDates.value.length === 0) {
+        const alt = pickupDayOptions.value.find(o => !isDateClosed(o.dateKey))
+        if (alt) { selDates.value = [alt.dateKey]; ensureDateQty(alt.dateKey) }
+      }
+    } catch {}
   }
-}
-// 從已選清單中移除單一天（例如整月套用後，想拿掉其中某幾天）
-function removeDate(dateKey) {
-  const idx = selDates.value.indexOf(dateKey)
-  if (idx >= 0) selDates.value.splice(idx, 1)
-  delete dateQty.value[dateKey]
-}
-function adjDateSoy(dateKey, delta)  {
-  ensureDateQty(dateKey)
-  dateQty.value[dateKey].soymilkQty = Math.max(0, dateQty.value[dateKey].soymilkQty + delta)
-}
-function adjDateTofu(dateKey, delta) {
-  ensureDateQty(dateKey)
-  dateQty.value[dateKey].tofuQty = Math.max(0, dateQty.value[dateKey].tofuQty + delta)
-}
-// 把某一天目前的數量，套用到其他所有已勾選的日期
-function applyToAllDates(sourceKey) {
-  ensureDateQty(sourceKey)
-  const src = dateQty.value[sourceKey]
-  for (const dateKey of selDates.value) {
-    if (dateKey === sourceKey) continue
-    ensureDateQty(dateKey)
-    dateQty.value[dateKey].soymilkQty = src.soymilkQty
-    dateQty.value[dateKey].tofuQty    = src.tofuQty
-  }
-}
-// 該日期的中文標籤＋日期，用於摘要與成功訊息
-function labelFor(dateKey) {
-  const info = dateInfo(dateKey)
-  return `${info.label} ${info.dateStr}`
-}
 
-// ── 包月：直接選擇月份，一次加入該月所有可訂購的日期 ─────────────
-const packageMonthOptions = computed(() => {
-  const opts = []
-  const now = new Date()
-  for (let i = 0; i < 4; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
-    opts.push({
-      val:   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-      label: `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`,
-    })
-  }
-  return opts
-})
-const packageMonth = ref(packageMonthOptions.value[0]?.val || '')
-// 「整月訂購」要套用到每一天的數量
-const packageSoyQty  = ref(1)
-const packageTofuQty = ref(0)
-function adjPackageSoy(delta)  { packageSoyQty.value  = Math.max(0, packageSoyQty.value + delta) }
-function adjPackageTofu(delta) { packageTofuQty.value = Math.max(0, packageTofuQty.value + delta) }
+  // ── 狀態 ────────────────────────────────────────────────────────
+  // selDates：目前已選的取貨「實際日期」（YYYY-MM-DD，可複選，例如同一星期跨多週也各自獨立）
+  // dateQty：每個日期各自的數量，例如 { '2026-08-04': { soymilkQty: 2, tofuQty: 0 }, ... }
+  const selDates = ref([])
+  const dateQty  = ref({})
+  const name     = ref('')
+  const contact  = ref('')
+  const remark   = ref('')
 
-function applyMonthPackage() {
-  if (!packageMonth.value) return
-  if (packageSoyQty.value === 0 && packageTofuQty.value === 0) {
-    alert('請先填寫每次要訂的豆漿或豆腐數量')
-    return
-  }
-  const [y, m] = packageMonth.value.split('-').map(Number)
-  const daysInMonth = new Date(y, m, 0).getDate()
-  const todayKey = toDateStr(new Date())
-  let addedCount = 0
-  for (let day = 1; day <= daysInMonth; day++) {
-    const d = new Date(y, m - 1, day)
-    const dateKey = toDateStr(d)
-    if (dateKey < todayKey) continue // 不加入已經過去的日期
+  // 依日期字串（YYYY-MM-DD）反推星期標籤／代碼，用於整月加入、成功訊息等場合
+  function dateInfo(dateKey) {
+    const d = new Date(dateKey + 'T00:00:00')
     const jsDow = d.getDay()
     const dow   = jsDow === 0 ? 7 : jsDow
-    if (!businessDays.value.includes(dow)) continue // 不是營業日（星期幾）
-    if (isDateClosed(dateKey)) continue             // 該天被設為休息日
-    if (!selDates.value.includes(dateKey)) selDates.value.push(dateKey)
-    // 直接把設定的數量套用到這一天（該月已選過的天數也會一併同步成這個數量）
-    dateQty.value[dateKey] = { soymilkQty: packageSoyQty.value, tofuQty: packageTofuQty.value }
-    addedCount++
+    return { dateKey, dow, code: DOW_CODE[dow] || 'tue', label: DOW_LABEL[dow] || '', dateStr: fmt(d) }
   }
-  if (addedCount === 0) {
-    alert('這個月沒有可以加入的取貨日（可能都已過期，或該月尚無營業日設定）')
+
+  // 已選日期由近到遠排序後的清單，畫面顯示用
+  const sortedSelDates = computed(() => [...selDates.value].sort())
+
+  function ensureDateQty(dateKey) {
+    if (!dateQty.value[dateKey]) dateQty.value[dateKey] = { soymilkQty: 0, tofuQty: 0 }
   }
-}
-
-// 名稱建議
-const knownNames  = ref([])
-const suggestions = ref([])
-const showSuggest = ref(false)
-
-// 登入面板
-const loginPanelOpen = ref(false)
-
-// 送出成功 modal
-const successModal   = ref(false)
-const successMsg     = ref('')
-const submitting     = ref(false)
-const errorMsg       = ref('')
-
-// ── Google 登入 ──────────────────────────────────────────────────
-const initGoogle = () => {
-  if (!window.google) return
-  window.google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID.value,
-    callback: handleCredential,
-    auto_select: false,
-  })
-}
-
-const renderGoogleBtn = (elId) => {
-  if (!window.google) return
-  const el = document.getElementById(elId)
-  if (!el) return
-  window.google.accounts.id.renderButton(el, {
-    theme: 'outline', size: 'medium', text: 'signin_with', locale: 'zh-TW', width: 220,
-  })
-}
-
-const handleCredential = async (response) => {
-  try {
-    const res  = await fetch(`${BASE.value}/google-login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ credential: response.credential }),
-    })
-    const data = await res.json()
-    if (!data.error) {
-      customerStore.setCustomer(data)
-      loginPanelOpen.value = false
-      // 用 Google 帳號資料覆蓋姓名／聯絡（若欄位仍空白）
-      fillFromCustomer(data)
+  function toggleDate(dateKey) {
+    if (isDateClosed(dateKey)) return
+    const idx = selDates.value.indexOf(dateKey)
+    if (idx >= 0) {
+      selDates.value.splice(idx, 1)
+    } else {
+      selDates.value.push(dateKey)
+      ensureDateQty(dateKey)
     }
-  } catch {}
-}
-
-const logout = async () => {
-  await fetch(`${BASE.value}/logout`, { method: 'POST', credentials: 'include' })
-  customerStore.clearCustomer()
-}
-
-const toggleLoginPanel = () => {
-  loginPanelOpen.value = !loginPanelOpen.value
-  if (loginPanelOpen.value && !customer.value) {
-    nextTick(() => renderGoogleBtn('sb-google-btn'))
   }
-}
-
-// ── 用登入資料填入表單 ──────────────────────────────────────────
-function fillFromCustomer(c) {
-  if (!name.value.trim() && c.name)   name.value    = c.name
-  if (!contact.value.trim() && c.mobile) contact.value = c.mobile
-}
-
-// ── localStorage ────────────────────────────────────────────────
-const LS_KEY = 'sm_soybean_last'
-
-function saveLocal() {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify({
-      name: name.value,
-      contact: contact.value,
-    }))
-  } catch {}
-}
-
-function loadLocal() {
-  try {
-    const raw = localStorage.getItem(LS_KEY)
-    if (!raw) return
-    const d = JSON.parse(raw)
-    if (!name.value && d.name)       name.value    = d.name
-    if (!contact.value && d.contact) contact.value = d.contact
-  } catch {}
-}
-
-function loadKnownNames() {
-  try {
-    const raw = localStorage.getItem('sm_names')
-    if (raw) knownNames.value = JSON.parse(raw)
-  } catch {}
-}
-
-
-// ── 名稱建議 ────────────────────────────────────────────────────
-function onNameInput(v) {
-  if (!v) { showSuggest.value = false; return }
-  const m = knownNames.value.filter(n => n.includes(v) && n !== v)
-  suggestions.value = m.slice(0, 5)
-  showSuggest.value = m.length > 0
-}
-function pickName(n) { name.value = n; showSuggest.value = false }
-
-// ── 摘要計算 ────────────────────────────────────────────────────
-
-// 有數量的已選日期（用於摘要／送出，過濾掉勾了但沒填數量的天；已依日期排序）
-const activeDayEntries = computed(() =>
-    sortedSelDates.value
-        .map(dateKey => ({ dateKey, qty: dateQty.value[dateKey] || { soymilkQty: 0, tofuQty: 0 } }))
-        .filter(d => d.qty.soymilkQty > 0 || d.qty.tofuQty > 0)
-)
-const totalPrice = computed(() =>
-    activeDayEntries.value.reduce((sum, d) => sum + (d.qty.soymilkQty + d.qty.tofuQty) * 50, 0)
-)
-const hasOrder = computed(() => activeDayEntries.value.length > 0)
-
-// ── 送出 ────────────────────────────────────────────────────────
-async function doSubmit() {
-  if (!name.value.trim())    { alert('請輸入姓名'); return }
-  if (!contact.value.trim()) { alert('請輸入聯絡方式'); return }
-  if (!hasOrder.value)       { alert('請選擇豆漿或豆腐數量'); return }
-
-  errorMsg.value = ''
-
-  // 記住姓名
-  try {
-    const names = knownNames.value
-    if (!names.includes(name.value)) {
-      names.unshift(name.value)
-      if (names.length > 30) names.pop()
-      localStorage.setItem('sm_names', JSON.stringify(names))
+  // 從已選清單中移除單一天（例如整月套用後，想拿掉其中某幾天）
+  function removeDate(dateKey) {
+    const idx = selDates.value.indexOf(dateKey)
+    if (idx >= 0) selDates.value.splice(idx, 1)
+    delete dateQty.value[dateKey]
+  }
+  function adjDateSoy(dateKey, delta)  {
+    ensureDateQty(dateKey)
+    dateQty.value[dateKey].soymilkQty = Math.max(0, dateQty.value[dateKey].soymilkQty + delta)
+  }
+  function adjDateTofu(dateKey, delta) {
+    ensureDateQty(dateKey)
+    dateQty.value[dateKey].tofuQty = Math.max(0, dateQty.value[dateKey].tofuQty + delta)
+  }
+  // 把某一天目前的數量，套用到其他所有已勾選的日期
+  function applyToAllDates(sourceKey) {
+    ensureDateQty(sourceKey)
+    const src = dateQty.value[sourceKey]
+    for (const dateKey of selDates.value) {
+      if (dateKey === sourceKey) continue
+      ensureDateQty(dateKey)
+      dateQty.value[dateKey].soymilkQty = src.soymilkQty
+      dateQty.value[dateKey].tofuQty    = src.tofuQty
     }
-  } catch {}
-
-  // 儲存最後輸入資料（未登入也存）
-  saveLocal()
-
-  const payload = {
-    customerId: customer.value?.id ?? '',
-    name:       name.value.trim(),
-    contact:    contact.value.trim(),
-    remark:     remark.value.trim(),
-    items: activeDayEntries.value.map(d => ({
-      pickupDay:  dateInfo(d.dateKey).code,
-      pickupDate: d.dateKey,
-      soymilkQty: d.qty.soymilkQty,
-      tofuQty:    d.qty.tofuQty,
-    })),
+  }
+  // 該日期的中文標籤＋日期，用於摘要與成功訊息
+  function labelFor(dateKey) {
+    const info = dateInfo(dateKey)
+    return `${info.label} ${info.dateStr}`
   }
 
-  submitting.value = true
-  try {
-    const res  = await fetch(`${SOYBEAN_BASE.value}/order/batch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(payload),
-    })
-    const data = await res.json()
-    if (data.error) {
-      errorMsg.value = data.error
+  // ── 包月：直接選擇月份，一次加入該月所有可訂購的日期 ─────────────
+  const packageMonthOptions = computed(() => {
+    const opts = []
+    const now = new Date()
+    for (let i = 0; i < 4; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+      opts.push({
+        val:   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+        label: `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`,
+      })
+    }
+    return opts
+  })
+  const packageMonth = ref(packageMonthOptions.value[0]?.val || '')
+  // 「整月訂購」要套用到每一天的數量
+  const packageSoyQty  = ref(1)
+  const packageTofuQty = ref(0)
+  function adjPackageSoy(delta)  { packageSoyQty.value  = Math.max(0, packageSoyQty.value + delta) }
+  function adjPackageTofu(delta) { packageTofuQty.value = Math.max(0, packageTofuQty.value + delta) }
+
+  function applyMonthPackage() {
+    if (!packageMonth.value) return
+    if (packageSoyQty.value === 0 && packageTofuQty.value === 0) {
+      alert('請先填寫每次要訂的豆漿或豆腐數量')
       return
     }
-
-    let msg = `訂購人：${name.value}　聯絡：${contact.value}\n\n`
-    for (const d of activeDayEntries.value) {
-      msg += `【${labelFor(d.dateKey)}】\n`
-      if (d.qty.soymilkQty) msg += `豆漿 800cc × ${d.qty.soymilkQty} 袋\n`
-      if (d.qty.tofuQty)    msg += `豆腐 × ${d.qty.tofuQty} 塊\n`
-      msg += '\n'
+    const [y, m] = packageMonth.value.split('-').map(Number)
+    const daysInMonth = new Date(y, m, 0).getDate()
+    const todayKey = toDateStr(new Date())
+    let addedCount = 0
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(y, m - 1, day)
+      const dateKey = toDateStr(d)
+      if (dateKey < todayKey) continue // 不加入已經過去的日期
+      const jsDow = d.getDay()
+      const dow   = jsDow === 0 ? 7 : jsDow
+      if (!businessDaysOnDate(dateKey).includes(dow)) continue // 不是營業日（星期幾，依當天適用的排程判斷）
+      if (isDateClosed(dateKey)) continue             // 該天被設為休息日
+      if (!selDates.value.includes(dateKey)) selDates.value.push(dateKey)
+      // 直接把設定的數量套用到這一天（該月已選過的天數也會一併同步成這個數量）
+      dateQty.value[dateKey] = { soymilkQty: packageSoyQty.value, tofuQty: packageTofuQty.value }
+      addedCount++
     }
-    if (remark.value.trim()) msg += `備註：${remark.value.trim()}\n\n`
-    msg += `合計：$${totalPrice.value}`
-
-    successMsg.value   = msg
-    successModal.value = true
-    // 2 秒後自動跳轉
-    setTimeout(() => {
-      if (customer.value) {
-        router.push('/front/profile/log?tab=soybeans')
-      } else {
-        router.push('/')
-      }
-    }, 2000)
-  } catch (e) {
-    errorMsg.value = '送出失敗，請稍後再試'
-  } finally {
-    submitting.value = false
+    if (addedCount === 0) {
+      alert('這個月沒有可以加入的取貨日（可能都已過期，或該月尚無營業日設定）')
+    }
   }
-}
 
-function resetForm() {
-  name.value = ''; contact.value = ''; remark.value = ''
-  dateQty.value = {}
-  const firstKey = pickupDayOptions.value[0]?.dateKey
-  selDates.value = firstKey ? [firstKey] : []
-  if (firstKey) ensureDateQty(firstKey)
-  weekOffset.value = 0
-  successModal.value = false
-}
+  // 名稱建議
+  const knownNames  = ref([])
+  const suggestions = ref([])
+  const showSuggest = ref(false)
 
-// ── 初始化 ──────────────────────────────────────────────────────
-onMounted(async () => {
-  loadKnownNames()
-  await fetchBusinessDays()
-  const firstKey = pickupDayOptions.value[0]?.dateKey
-  if (firstKey) { selDates.value = [firstKey]; ensureDateQty(firstKey) }
-  fetchClosedDates()
+  // 登入面板
+  const loginPanelOpen = ref(false)
 
-  // 嘗試取得已登入客戶
-  try {
-    const data = await (await fetch(`${BASE.value}/me`, { credentials: 'include' })).json()
-    if (!data.error) {
-      customerStore.setCustomer(data)
-      fillFromCustomer(data)
-    } else {
+  // 送出成功 modal
+  const successModal   = ref(false)
+  const successMsg     = ref('')
+  const submitting     = ref(false)
+  const errorMsg       = ref('')
+
+  // ── Google 登入 ──────────────────────────────────────────────────
+  const initGoogle = () => {
+    if (!window.google) return
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID.value,
+      callback: handleCredential,
+      auto_select: false,
+    })
+  }
+
+  const renderGoogleBtn = (elId) => {
+    if (!window.google) return
+    const el = document.getElementById(elId)
+    if (!el) return
+    window.google.accounts.id.renderButton(el, {
+      theme: 'outline', size: 'medium', text: 'signin_with', locale: 'zh-TW', width: 220,
+    })
+  }
+
+  const handleCredential = async (response) => {
+    try {
+      const res  = await fetch(`${BASE.value}/google-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ credential: response.credential }),
+      })
+      const data = await res.json()
+      if (!data.error) {
+        customerStore.setCustomer(data)
+        loginPanelOpen.value = false
+        // 用 Google 帳號資料覆蓋姓名／聯絡（若欄位仍空白）
+        fillFromCustomer(data)
+      }
+    } catch {}
+  }
+
+  const logout = async () => {
+    await fetch(`${BASE.value}/logout`, { method: 'POST', credentials: 'include' })
+    customerStore.clearCustomer()
+  }
+
+  const toggleLoginPanel = () => {
+    loginPanelOpen.value = !loginPanelOpen.value
+    if (loginPanelOpen.value && !customer.value) {
+      nextTick(() => renderGoogleBtn('sb-google-btn'))
+    }
+  }
+
+  // ── 用登入資料填入表單 ──────────────────────────────────────────
+  function fillFromCustomer(c) {
+    if (!name.value.trim() && c.name)   name.value    = c.name
+    if (!contact.value.trim() && c.mobile) contact.value = c.mobile
+  }
+
+  // ── localStorage ────────────────────────────────────────────────
+  const LS_KEY = 'sm_soybean_last'
+
+  function saveLocal() {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        name: name.value,
+        contact: contact.value,
+      }))
+    } catch {}
+  }
+
+  function loadLocal() {
+    try {
+      const raw = localStorage.getItem(LS_KEY)
+      if (!raw) return
+      const d = JSON.parse(raw)
+      if (!name.value && d.name)       name.value    = d.name
+      if (!contact.value && d.contact) contact.value = d.contact
+    } catch {}
+  }
+
+  function loadKnownNames() {
+    try {
+      const raw = localStorage.getItem('sm_names')
+      if (raw) knownNames.value = JSON.parse(raw)
+    } catch {}
+  }
+
+
+  // ── 名稱建議 ────────────────────────────────────────────────────
+  function onNameInput(v) {
+    if (!v) { showSuggest.value = false; return }
+    const m = knownNames.value.filter(n => n.includes(v) && n !== v)
+    suggestions.value = m.slice(0, 5)
+    showSuggest.value = m.length > 0
+  }
+  function pickName(n) { name.value = n; showSuggest.value = false }
+
+  // ── 摘要計算 ────────────────────────────────────────────────────
+
+  // 有數量的已選日期（用於摘要／送出，過濾掉勾了但沒填數量的天；已依日期排序）
+  const activeDayEntries = computed(() =>
+          sortedSelDates.value
+                  .map(dateKey => ({ dateKey, qty: dateQty.value[dateKey] || { soymilkQty: 0, tofuQty: 0 } }))
+                  .filter(d => d.qty.soymilkQty > 0 || d.qty.tofuQty > 0)
+  )
+  const totalPrice = computed(() =>
+          activeDayEntries.value.reduce((sum, d) => sum + (d.qty.soymilkQty + d.qty.tofuQty) * 50, 0)
+  )
+  const hasOrder = computed(() => activeDayEntries.value.length > 0)
+
+  // ── 送出 ────────────────────────────────────────────────────────
+  async function doSubmit() {
+    if (!name.value.trim())    { alert('請輸入姓名'); return }
+    if (!contact.value.trim()) { alert('請輸入聯絡方式'); return }
+    if (!hasOrder.value)       { alert('請選擇豆漿或豆腐數量'); return }
+
+    errorMsg.value = ''
+
+    // 記住姓名
+    try {
+      const names = knownNames.value
+      if (!names.includes(name.value)) {
+        names.unshift(name.value)
+        if (names.length > 30) names.pop()
+        localStorage.setItem('sm_names', JSON.stringify(names))
+      }
+    } catch {}
+
+    // 儲存最後輸入資料（未登入也存）
+    saveLocal()
+
+    const payload = {
+      customerId: customer.value?.id ?? '',
+      name:       name.value.trim(),
+      contact:    contact.value.trim(),
+      remark:     remark.value.trim(),
+      items: activeDayEntries.value.map(d => ({
+        pickupDay:  dateInfo(d.dateKey).code,
+        pickupDate: d.dateKey,
+        soymilkQty: d.qty.soymilkQty,
+        tofuQty:    d.qty.tofuQty,
+      })),
+    }
+
+    submitting.value = true
+    try {
+      const res  = await fetch(`${SOYBEAN_BASE.value}/order/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (data.error) {
+        errorMsg.value = data.error
+        return
+      }
+
+      let msg = `訂購人：${name.value}　聯絡：${contact.value}\n\n`
+      for (const d of activeDayEntries.value) {
+        msg += `【${labelFor(d.dateKey)}】\n`
+        if (d.qty.soymilkQty) msg += `豆漿 800cc × ${d.qty.soymilkQty} 袋\n`
+        if (d.qty.tofuQty)    msg += `豆腐 × ${d.qty.tofuQty} 塊\n`
+        msg += '\n'
+      }
+      if (remark.value.trim()) msg += `備註：${remark.value.trim()}\n\n`
+      msg += `合計：$${totalPrice.value}`
+
+      successMsg.value   = msg
+      successModal.value = true
+      // 2 秒後自動跳轉
+      setTimeout(() => {
+        if (customer.value) {
+          router.push('/front/profile/log?tab=soybeans')
+        } else {
+          router.push('/')
+        }
+      }, 2000)
+    } catch (e) {
+      errorMsg.value = '送出失敗，請稍後再試'
+    } finally {
+      submitting.value = false
+    }
+  }
+
+  function resetForm() {
+    name.value = ''; contact.value = ''; remark.value = ''
+    dateQty.value = {}
+    const firstKey = pickupDayOptions.value[0]?.dateKey
+    selDates.value = firstKey ? [firstKey] : []
+    if (firstKey) ensureDateQty(firstKey)
+    weekOffset.value = 0
+    successModal.value = false
+  }
+
+  // ── 初始化 ──────────────────────────────────────────────────────
+  onMounted(async () => {
+    loadKnownNames()
+    await fetchBusinessDays()
+    const firstKey = pickupDayOptions.value[0]?.dateKey
+    if (firstKey) { selDates.value = [firstKey]; ensureDateQty(firstKey) }
+    fetchClosedDates()
+
+    // 嘗試取得已登入客戶
+    try {
+      const data = await (await fetch(`${BASE.value}/me`, { credentials: 'include' })).json()
+      if (!data.error) {
+        customerStore.setCustomer(data)
+        fillFromCustomer(data)
+      } else {
+        loadLocal()
+      }
+    } catch {
       loadLocal()
     }
-  } catch {
-    loadLocal()
-  }
 
-  // 掛載 Google GSI script
-  if (!document.getElementById('google-gsi-script')) {
-    const script    = document.createElement('script')
-    script.id       = 'google-gsi-script'
-    script.src      = 'https://accounts.google.com/gsi/client'
-    script.async    = true
-    script.defer    = true
-    script.onload   = () => initGoogle()
-    document.head.appendChild(script)
-  } else if (window.google) {
-    initGoogle()
-  }
-})
+    // 掛載 Google GSI script
+    if (!document.getElementById('google-gsi-script')) {
+      const script    = document.createElement('script')
+      script.id       = 'google-gsi-script'
+      script.src      = 'https://accounts.google.com/gsi/client'
+      script.async    = true
+      script.defer    = true
+      script.onload   = () => initGoogle()
+      document.head.appendChild(script)
+    } else if (window.google) {
+      initGoogle()
+    }
+  })
 </script>
 
 <template>
@@ -616,12 +630,12 @@ onMounted(async () => {
           <label>姓名 <span class="sb-required">*</span></label>
           <div class="sb-field__suggest-wrap">
             <input
-                v-model="name"
-                type="text"
-                placeholder="請輸入姓名"
-                autocomplete="off"
-                @input="onNameInput(name)"
-                @blur="setTimeout(() => showSuggest = false, 150)"
+                    v-model="name"
+                    type="text"
+                    placeholder="請輸入姓名"
+                    autocomplete="off"
+                    @input="onNameInput(name)"
+                    @blur="setTimeout(() => showSuggest = false, 150)"
             />
             <div v-if="showSuggest" class="sb-suggest">
               <div v-for="n in suggestions" :key="n" class="sb-suggest__item" @mousedown.prevent="pickName(n)">{{ n }}</div>
@@ -748,422 +762,422 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-/* ── Page ── */
-.sb-page {
-  min-height: 100vh;
-  background: #f4f7f2;
-  font-family: 'Noto Sans TC', sans-serif;
-}
+  /* ── Page ── */
+  .sb-page {
+    min-height: 100vh;
+    background: #f4f7f2;
+    font-family: 'Noto Sans TC', sans-serif;
+  }
 
-/* ── Header ── */
-.sb-header {
-  background: linear-gradient(135deg, #2d5a3d 0%, #1a3d28 100%);
-  padding: 1.25rem 1.5rem;
-  position: relative;
-}
-.sb-header__inner {
-  max-width: 560px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.sb-header__logo-img {
-  height: 44px;
-  filter: brightness(0) invert(1);
-  opacity: 0.9;
-}
-.sb-header__text { flex: 1; }
-.sb-header__title {
-  font-family: 'Noto Serif TC', serif;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #fff;
-  margin: 0 0 2px;
-}
-.sb-header__sub {
-  font-size: 0.78rem;
-  color: rgba(255,255,255,0.65);
-  margin: 0;
-}
+  /* ── Header ── */
+  .sb-header {
+    background: linear-gradient(135deg, #2d5a3d 0%, #1a3d28 100%);
+    padding: 1.25rem 1.5rem;
+    position: relative;
+  }
+  .sb-header__inner {
+    max-width: 560px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .sb-header__logo-img {
+    height: 44px;
+    filter: brightness(0) invert(1);
+    opacity: 0.9;
+  }
+  .sb-header__text { flex: 1; }
+  .sb-header__title {
+    font-family: 'Noto Serif TC', serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 2px;
+  }
+  .sb-header__sub {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.65);
+    margin: 0;
+  }
 
-/* 手機窄螢幕：logo 縮小，標題／副標題換到獨立一行，避免被擠壓成逐字直排 */
-@media (max-width: 480px) {
-  .sb-header { padding: 1rem 1.1rem; }
-  .sb-header__inner { flex-wrap: wrap; row-gap: 0.6rem; }
-  .sb-header__logo { order: 1; }
-  .sb-header__logo-img { height: 30px; }
-  .sb-login-area { order: 2; margin-left: auto; }
-  .sb-header__text { order: 3; flex-basis: 100%; }
-  .sb-header__title { font-size: 1rem; white-space: nowrap; }
-  .sb-header__sub { font-size: 0.72rem; }
-}
+  /* 手機窄螢幕：logo 縮小，標題／副標題換到獨立一行，避免被擠壓成逐字直排 */
+  @media (max-width: 480px) {
+    .sb-header { padding: 1rem 1.1rem; }
+    .sb-header__inner { flex-wrap: wrap; row-gap: 0.6rem; }
+    .sb-header__logo { order: 1; }
+    .sb-header__logo-img { height: 30px; }
+    .sb-login-area { order: 2; margin-left: auto; }
+    .sb-header__text { order: 3; flex-basis: 100%; }
+    .sb-header__title { font-size: 1rem; white-space: nowrap; }
+    .sb-header__sub { font-size: 0.72rem; }
+  }
 
-/* ── 登入區 ── */
-.sb-login-area { position: relative; flex-shrink: 0; }
-.sb-login-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
-  background: rgba(255,255,255,0.15);
-  border: 1.5px solid rgba(255,255,255,0.35);
-  border-radius: 20px;
-  color: #fff;
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.sb-login-btn:hover { background: rgba(255,255,255,0.25); }
-.sb-avatar-btn {
-  width: 36px; height: 36px;
-  border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.6);
-  overflow: hidden;
-  cursor: pointer;
-  background: #1FC29C;
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
-  display: flex; align-items: center; justify-content: center;
-  padding: 0;
-}
-.sb-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* ── 登入區 ── */
+  .sb-login-area { position: relative; flex-shrink: 0; }
+  .sb-login-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    background: rgba(255,255,255,0.15);
+    border: 1.5px solid rgba(255,255,255,0.35);
+    border-radius: 20px;
+    color: #fff;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .sb-login-btn:hover { background: rgba(255,255,255,0.25); }
+  .sb-avatar-btn {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.6);
+    overflow: hidden;
+    cursor: pointer;
+    background: #1FC29C;
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+  }
+  .sb-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-.sb-login-panel {
-  position: absolute;
-  right: 0; top: calc(100% + 10px);
-  width: 240px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.15);
-  border: 1px solid #eee;
-  padding: 14px 16px;
-  z-index: 1000;
-}
-.sb-login-panel__hint {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 12px; color: #3d7a52;
-  margin: 0 0 10px;
-  background: #f0f9f4; border-radius: 7px; padding: 7px 10px;
-}
-.sb-login-panel__user {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #f5f5f5;
-}
-.sb-login-panel__avatar {
-  width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
-}
-.sb-login-panel__name { font-size: 13px; font-weight: 600; color: #333; margin: 0; }
-.sb-login-panel__email { font-size: 11px; color: #999; margin: 0; }
-.sb-login-panel__link {
-  display: block; font-size: 13px; color: #3d7a52; text-decoration: none;
-  padding: 7px 0; border-bottom: 1px solid #f5f5f5;
-}
-.sb-login-panel__link:hover { color: #1a5c3a; }
-.sb-login-panel__logout {
-  display: block; width: 100%; text-align: left;
-  font-size: 13px; color: #e74c3c; background: none; border: none;
-  cursor: pointer; padding: 8px 0; font-family: inherit;
-}
-.sb-login-panel__logout:hover { color: #c0392b; }
+  .sb-login-panel {
+    position: absolute;
+    right: 0; top: calc(100% + 10px);
+    width: 240px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.15);
+    border: 1px solid #eee;
+    padding: 14px 16px;
+    z-index: 1000;
+  }
+  .sb-login-panel__hint {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: #3d7a52;
+    margin: 0 0 10px;
+    background: #f0f9f4; border-radius: 7px; padding: 7px 10px;
+  }
+  .sb-login-panel__user {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f5f5f5;
+  }
+  .sb-login-panel__avatar {
+    width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+  }
+  .sb-login-panel__name { font-size: 13px; font-weight: 600; color: #333; margin: 0; }
+  .sb-login-panel__email { font-size: 11px; color: #999; margin: 0; }
+  .sb-login-panel__link {
+    display: block; font-size: 13px; color: #3d7a52; text-decoration: none;
+    padding: 7px 0; border-bottom: 1px solid #f5f5f5;
+  }
+  .sb-login-panel__link:hover { color: #1a5c3a; }
+  .sb-login-panel__logout {
+    display: block; width: 100%; text-align: left;
+    font-size: 13px; color: #e74c3c; background: none; border: none;
+    cursor: pointer; padding: 8px 0; font-family: inherit;
+  }
+  .sb-login-panel__logout:hover { color: #c0392b; }
 
-.sb-overlay {
-  position: fixed; inset: 0; z-index: 999;
-}
+  .sb-overlay {
+    position: fixed; inset: 0; z-index: 999;
+  }
 
-.sb-panel-fade-enter-active, .sb-panel-fade-leave-active { transition: opacity 0.15s, transform 0.15s; }
-.sb-panel-fade-enter-from, .sb-panel-fade-leave-to { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  .sb-panel-fade-enter-active, .sb-panel-fade-leave-active { transition: opacity 0.15s, transform 0.15s; }
+  .sb-panel-fade-enter-from, .sb-panel-fade-leave-to { opacity: 0; transform: translateY(-4px) scale(0.97); }
 
-/* ── 已登入標示 ── */
-.sb-logged-badge {
-  display: inline-flex; align-items: center; gap: 5px;
-  margin-left: auto;
-  background: #f0f9f4; border: 1px solid #b8d8c4;
-  border-radius: 20px; padding: 3px 9px 3px 5px;
-  font-size: 12px; font-weight: 500; color: #1a5c3a;
-  font-family: 'Noto Sans TC', sans-serif;
-}
-.sb-logged-badge__avatar { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; }
+  /* ── 已登入標示 ── */
+  .sb-logged-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    margin-left: auto;
+    background: #f0f9f4; border: 1px solid #b8d8c4;
+    border-radius: 20px; padding: 3px 9px 3px 5px;
+    font-size: 12px; font-weight: 500; color: #1a5c3a;
+    font-family: 'Noto Sans TC', sans-serif;
+  }
+  .sb-logged-badge__avatar { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; }
 
-/* ── Wrap ── */
-.sb-wrap {
-  max-width: 560px;
-  margin: 0 auto;
-  padding: 1.5rem 1rem 3rem;
-}
+  /* ── Wrap ── */
+  .sb-wrap {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 3rem;
+  }
 
-/* ── Notice ── */
-.sb-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  margin-bottom: 0.75rem;
-  line-height: 1.55;
-}
-.sb-notice--warn { background: #fff8e6; border: 1px solid #f0d080; color: #7a5800; }
-.sb-notice--info { background: #e8f4f0; border: 1px solid #b0d8cc; color: #1a5c48; }
-.sb-notice__icon { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
+  /* ── Notice ── */
+  .sb-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 0.75rem;
+    line-height: 1.55;
+  }
+  .sb-notice--warn { background: #fff8e6; border: 1px solid #f0d080; color: #7a5800; }
+  .sb-notice--info { background: #e8f4f0; border: 1px solid #b0d8cc; color: #1a5c48; }
+  .sb-notice__icon { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
 
-/* ── Week Nav ── */
-.sb-week-nav {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 0.75rem;
-}
-.sb-week-nav__btn {
-  font-family: inherit; font-size: 13px; font-weight: 500; color: #3d7a52;
-  background: #f0f9f4; border: 1px solid #b8d8c4; border-radius: 20px;
-  padding: 5px 12px; cursor: pointer; transition: background 0.15s;
-}
-.sb-week-nav__btn:hover:not(:disabled) { background: #e0f2e6; }
-.sb-week-nav__btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.sb-week-nav__label { font-size: 14px; font-weight: 600; color: #1a3d28; }
+  /* ── Week Nav ── */
+  .sb-week-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  .sb-week-nav__btn {
+    font-family: inherit; font-size: 13px; font-weight: 500; color: #3d7a52;
+    background: #f0f9f4; border: 1px solid #b8d8c4; border-radius: 20px;
+    padding: 5px 12px; cursor: pointer; transition: background 0.15s;
+  }
+  .sb-week-nav__btn:hover:not(:disabled) { background: #e0f2e6; }
+  .sb-week-nav__btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .sb-week-nav__label { font-size: 14px; font-weight: 600; color: #1a3d28; }
 
-/* ── Day Tabs ── */
-.sb-day-tabs__hint { font-size: 12px; color: #8a9e84; margin: 0 0 0.5rem; }
-.sb-day-tabs { display: flex; gap: 10px; margin-bottom: 1.25rem; flex-wrap: wrap; }
-.sb-day-tab {
-  flex: 1; min-width: 84px; padding: 10px;
-  border: 1.5px solid #d0daca; border-radius: 10px;
-  background: #fff; cursor: pointer; text-align: center;
-  transition: all .15s; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  position: relative;
-}
-.sb-day-tab.active { border-color: #3d7a52; background: #f0f9f4; }
-.sb-day-tab__check {
-  position: absolute; top: 6px; right: 8px;
-  font-size: 12px; font-weight: 700; color: #3d7a52;
-}
-.sb-day-tab__label { font-size: 15px; font-weight: 500; color: #2a2e25; }
-.sb-day-tab__date  { font-size: 11px; color: #8a9e84; }
-.sb-day-tab.active .sb-day-tab__label { color: #1a5c3a; }
-.sb-day-tab.closed {
-  cursor: not-allowed; opacity: 0.5;
-  background: #faf0f0; border-color: #f5c6c6;
-}
-.sb-day-tab.closed .sb-day-tab__label { color: #c0392b; }
-.sb-day-tab__closed {
-  font-size: 10px; color: #c0392b;
-  background: #fde8e8; border-radius: 4px;
-  padding: 1px 6px; font-weight: 500;
-}
+  /* ── Day Tabs ── */
+  .sb-day-tabs__hint { font-size: 12px; color: #8a9e84; margin: 0 0 0.5rem; }
+  .sb-day-tabs { display: flex; gap: 10px; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  .sb-day-tab {
+    flex: 1; min-width: 84px; padding: 10px;
+    border: 1.5px solid #d0daca; border-radius: 10px;
+    background: #fff; cursor: pointer; text-align: center;
+    transition: all .15s; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    position: relative;
+  }
+  .sb-day-tab.active { border-color: #3d7a52; background: #f0f9f4; }
+  .sb-day-tab__check {
+    position: absolute; top: 6px; right: 8px;
+    font-size: 12px; font-weight: 700; color: #3d7a52;
+  }
+  .sb-day-tab__label { font-size: 15px; font-weight: 500; color: #2a2e25; }
+  .sb-day-tab__date  { font-size: 11px; color: #8a9e84; }
+  .sb-day-tab.active .sb-day-tab__label { color: #1a5c3a; }
+  .sb-day-tab.closed {
+    cursor: not-allowed; opacity: 0.5;
+    background: #faf0f0; border-color: #f5c6c6;
+  }
+  .sb-day-tab.closed .sb-day-tab__label { color: #c0392b; }
+  .sb-day-tab__closed {
+    font-size: 10px; color: #c0392b;
+    background: #fde8e8; border-radius: 4px;
+    padding: 1px 6px; font-weight: 500;
+  }
 
-/* ── 包月 ── */
-.sb-package {
-  background: #fff; border: 1px solid #dce8d8; border-radius: 12px;
-  padding: 0.9rem 1rem; margin-bottom: 1rem;
-  display: flex; flex-direction: column; gap: 0.75rem;
-}
-.sb-package__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.sb-package__label { font-size: 12.5px; color: #5a6e54; white-space: nowrap; }
-.sb-package__select {
-  flex: 1; min-width: 110px;
-  padding: 6px 10px; border: 1.5px solid #c5d4be; border-radius: 8px;
-  font-size: 13px; background: #fafcf9; color: #2a2e25; font-family: inherit;
-}
-.sb-package__qtys { display: flex; gap: 16px; flex-wrap: wrap; }
-.sb-package__qty { display: flex; flex-direction: column; gap: 4px; }
-.sb-package__qty span { font-size: 12px; color: #5a6e54; }
-.sb-package__btn {
-  font-family: inherit; font-size: 12.5px; font-weight: 600; color: #fff;
-  background: #3d7a52; border: none; border-radius: 8px;
-  padding: 8px 12px; cursor: pointer; transition: background 0.15s;
-}
-.sb-package__btn:hover { background: #2a5c3a; }
+  /* ── 包月 ── */
+  .sb-package {
+    background: #fff; border: 1px solid #dce8d8; border-radius: 12px;
+    padding: 0.9rem 1rem; margin-bottom: 1rem;
+    display: flex; flex-direction: column; gap: 0.75rem;
+  }
+  .sb-package__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sb-package__label { font-size: 12.5px; color: #5a6e54; white-space: nowrap; }
+  .sb-package__select {
+    flex: 1; min-width: 110px;
+    padding: 6px 10px; border: 1.5px solid #c5d4be; border-radius: 8px;
+    font-size: 13px; background: #fafcf9; color: #2a2e25; font-family: inherit;
+  }
+  .sb-package__qtys { display: flex; gap: 16px; flex-wrap: wrap; }
+  .sb-package__qty { display: flex; flex-direction: column; gap: 4px; }
+  .sb-package__qty span { font-size: 12px; color: #5a6e54; }
+  .sb-package__btn {
+    font-family: inherit; font-size: 12.5px; font-weight: 600; color: #fff;
+    background: #3d7a52; border: none; border-radius: 8px;
+    padding: 8px 12px; cursor: pointer; transition: background 0.15s;
+  }
+  .sb-package__btn:hover { background: #2a5c3a; }
 
-/* ── Card ── */
-.sb-card {
-  background: #fff; border: 1px solid #dce8d8;
-  border-radius: 12px; padding: 1.1rem 1.25rem; margin-bottom: 1rem;
-}
-.sb-card__title {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 15px; font-weight: 600; color: #1a3d28;
-  margin-bottom: 1rem; font-family: 'Noto Serif TC', serif;
-}
-.sb-card__title svg { width: 18px; height: 18px; color: #3d7a52; flex-shrink: 0; }
-.sb-card--day .sb-card__title { justify-content: space-between; }
-.sb-day-apply-btn {
-  margin-left: auto; font-family: inherit;
-  font-size: 11px; font-weight: 500; color: #3d7a52;
-  background: #f0f9f4; border: 1px solid #b8d8c4;
-  border-radius: 20px; padding: 4px 10px; cursor: pointer;
-  transition: background 0.15s;
-}
-.sb-day-apply-btn:hover { background: #e0f2e6; }
-.sb-day-remove-btn {
-  margin-left: auto; font-family: inherit;
-  width: 22px; height: 22px; flex-shrink: 0;
-  font-size: 12px; line-height: 1; color: #c0392b;
-  background: #fdf0f0; border: 1px solid #f5c6c6; border-radius: 50%;
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s;
-}
-.sb-day-remove-btn:hover { background: #fbe0e0; }
+  /* ── Card ── */
+  .sb-card {
+    background: #fff; border: 1px solid #dce8d8;
+    border-radius: 12px; padding: 1.1rem 1.25rem; margin-bottom: 1rem;
+  }
+  .sb-card__title {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 15px; font-weight: 600; color: #1a3d28;
+    margin-bottom: 1rem; font-family: 'Noto Serif TC', serif;
+  }
+  .sb-card__title svg { width: 18px; height: 18px; color: #3d7a52; flex-shrink: 0; }
+  .sb-card--day .sb-card__title { justify-content: space-between; }
+  .sb-day-apply-btn {
+    margin-left: auto; font-family: inherit;
+    font-size: 11px; font-weight: 500; color: #3d7a52;
+    background: #f0f9f4; border: 1px solid #b8d8c4;
+    border-radius: 20px; padding: 4px 10px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .sb-day-apply-btn:hover { background: #e0f2e6; }
+  .sb-day-remove-btn {
+    margin-left: auto; font-family: inherit;
+    width: 22px; height: 22px; flex-shrink: 0;
+    font-size: 12px; line-height: 1; color: #c0392b;
+    background: #fdf0f0; border: 1px solid #f5c6c6; border-radius: 50%;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  .sb-day-remove-btn:hover { background: #fbe0e0; }
 
-/* ── Field ── */
-.sb-field { margin-bottom: 1rem; }
-.sb-field:last-child { margin-bottom: 0; }
-.sb-field label { display: block; font-size: 13px; color: #5a6e54; margin-bottom: 5px; font-weight: 500; }
-.sb-field input[type=text],
-.sb-field input[type=tel],
-.sb-field textarea {
-  width: 100%; box-sizing: border-box;
-  padding: 8px 12px; border: 1px solid #c5d4be; border-radius: 8px;
-  font-size: 14px; background: #fafcf9; color: #2a2e25;
-  font-family: inherit; outline: none; transition: border-color 0.2s;
-}
-.sb-field input:focus, .sb-field textarea:focus { border-color: #3d7a52; }
-.sb-field textarea { resize: none; }
-.sb-required { color: #c0392b; }
+  /* ── Field ── */
+  .sb-field { margin-bottom: 1rem; }
+  .sb-field:last-child { margin-bottom: 0; }
+  .sb-field label { display: block; font-size: 13px; color: #5a6e54; margin-bottom: 5px; font-weight: 500; }
+  .sb-field input[type=text],
+  .sb-field input[type=tel],
+  .sb-field textarea {
+    width: 100%; box-sizing: border-box;
+    padding: 8px 12px; border: 1px solid #c5d4be; border-radius: 8px;
+    font-size: 14px; background: #fafcf9; color: #2a2e25;
+    font-family: inherit; outline: none; transition: border-color 0.2s;
+  }
+  .sb-field input:focus, .sb-field textarea:focus { border-color: #3d7a52; }
+  .sb-field textarea { resize: none; }
+  .sb-required { color: #c0392b; }
 
-/* ── Suggest ── */
-.sb-field__suggest-wrap { position: relative; }
-.sb-suggest {
-  position: absolute; top: 100%; left: 0; right: 0;
-  background: #fff; border: 1px solid #c5d4be;
-  border-radius: 8px; margin-top: 3px; z-index: 50;
-  overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-.sb-suggest__item {
-  padding: 8px 12px; font-size: 14px; cursor: pointer;
-  color: #2a2e25; border-bottom: 1px solid #eef2ec; transition: background 0.12s;
-}
-.sb-suggest__item:last-child { border-bottom: none; }
-.sb-suggest__item:hover { background: #f0f9f4; }
+  /* ── Suggest ── */
+  .sb-field__suggest-wrap { position: relative; }
+  .sb-suggest {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: #fff; border: 1px solid #c5d4be;
+    border-radius: 8px; margin-top: 3px; z-index: 50;
+    overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  .sb-suggest__item {
+    padding: 8px 12px; font-size: 14px; cursor: pointer;
+    color: #2a2e25; border-bottom: 1px solid #eef2ec; transition: background 0.12s;
+  }
+  .sb-suggest__item:last-child { border-bottom: none; }
+  .sb-suggest__item:hover { background: #f0f9f4; }
 
-/* ── Order Rows ── */
-.sb-order-rows { display: flex; flex-direction: column; gap: 8px; }
-.sb-order-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; background: #f4f9f2; border-radius: 8px;
-}
-.sb-order-row__label { flex: 1; font-size: 14px; color: #2a2e25; }
-.sb-order-row__sub { display: block; font-size: 12px; color: #8a9e84; margin-top: 2px; }
-.sb-price-note { font-size: 12px; color: #8a9e84; margin-top: 10px; margin-bottom: 0; }
+  /* ── Order Rows ── */
+  .sb-order-rows { display: flex; flex-direction: column; gap: 8px; }
+  .sb-order-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; background: #f4f9f2; border-radius: 8px;
+  }
+  .sb-order-row__label { flex: 1; font-size: 14px; color: #2a2e25; }
+  .sb-order-row__sub { display: block; font-size: 12px; color: #8a9e84; margin-top: 2px; }
+  .sb-price-note { font-size: 12px; color: #8a9e84; margin-top: 10px; margin-bottom: 0; }
 
-/* ── Qty Ctrl ── */
-.sb-qty-ctrl { display: flex; align-items: center; gap: 6px; }
-.sb-qty-ctrl button {
-  width: 30px; height: 30px; border: 1.5px solid #c5d4be; border-radius: 7px;
-  background: #fff; cursor: pointer; font-size: 17px; color: #3a4e36;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  transition: background 0.15s;
-}
-.sb-qty-ctrl button:hover { background: #f0f9f4; }
-.sb-qty-ctrl input {
-  width: 46px; text-align: center; padding: 4px 2px;
-  border: 1.5px solid #c5d4be; border-radius: 7px;
-  font-size: 14px; background: #fff; color: #2a2e25; font-family: inherit;
-}
+  /* ── Qty Ctrl ── */
+  .sb-qty-ctrl { display: flex; align-items: center; gap: 6px; }
+  .sb-qty-ctrl button {
+    width: 30px; height: 30px; border: 1.5px solid #c5d4be; border-radius: 7px;
+    background: #fff; cursor: pointer; font-size: 17px; color: #3a4e36;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .sb-qty-ctrl button:hover { background: #f0f9f4; }
+  .sb-qty-ctrl input {
+    width: 46px; text-align: center; padding: 4px 2px;
+    border: 1.5px solid #c5d4be; border-radius: 7px;
+    font-size: 14px; background: #fff; color: #2a2e25; font-family: inherit;
+  }
 
-/* ── Summary ── */
-.sb-summary {
-  background: #fff; border: 1px solid #dce8d8;
-  border-radius: 10px; padding: 12px 16px; margin-bottom: 1rem;
-}
-.sb-summary__row {
-  display: flex; justify-content: space-between;
-  font-size: 13px; padding: 3px 0; color: #5a6e54;
-}
-.sb-summary__row--total {
-  font-size: 14px; font-weight: 600; color: #1a3d28;
-  border-top: 1px solid #dce8d8; margin-top: 6px; padding-top: 8px;
-}
-.sb-summary__row--day {
-  font-size: 12.5px; font-weight: 600; color: #3d7a52;
-  padding-top: 8px;
-}
-.sb-summary__row--day:first-child { padding-top: 0; }
+  /* ── Summary ── */
+  .sb-summary {
+    background: #fff; border: 1px solid #dce8d8;
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 1rem;
+  }
+  .sb-summary__row {
+    display: flex; justify-content: space-between;
+    font-size: 13px; padding: 3px 0; color: #5a6e54;
+  }
+  .sb-summary__row--total {
+    font-size: 14px; font-weight: 600; color: #1a3d28;
+    border-top: 1px solid #dce8d8; margin-top: 6px; padding-top: 8px;
+  }
+  .sb-summary__row--day {
+    font-size: 12.5px; font-weight: 600; color: #3d7a52;
+    padding-top: 8px;
+  }
+  .sb-summary__row--day:first-child { padding-top: 0; }
 
-/* ── Error ── */
-.sb-error {
-  display: flex; align-items: center; gap: 8px;
-  background: #fdf0f0; border: 1px solid #f5c6c6;
-  border-radius: 10px; padding: 11px 14px;
-  margin-bottom: 1rem; font-size: 13px; color: #c0392b;
-}
-.sb-error__icon { width: 16px; height: 16px; flex-shrink: 0; }
-.sb-error span { flex: 1; line-height: 1.5; }
-.sb-error__close {
-  background: none; border: none; color: #c0392b;
-  cursor: pointer; font-size: 14px; padding: 0 2px; opacity: 0.6;
-  flex-shrink: 0;
-}
-.sb-error__close:hover { opacity: 1; }
-.sb-err-fade-enter-active, .sb-err-fade-leave-active { transition: opacity 0.2s, transform 0.2s; }
-.sb-err-fade-enter-from, .sb-err-fade-leave-to { opacity: 0; transform: translateY(-4px); }
+  /* ── Error ── */
+  .sb-error {
+    display: flex; align-items: center; gap: 8px;
+    background: #fdf0f0; border: 1px solid #f5c6c6;
+    border-radius: 10px; padding: 11px 14px;
+    margin-bottom: 1rem; font-size: 13px; color: #c0392b;
+  }
+  .sb-error__icon { width: 16px; height: 16px; flex-shrink: 0; }
+  .sb-error span { flex: 1; line-height: 1.5; }
+  .sb-error__close {
+    background: none; border: none; color: #c0392b;
+    cursor: pointer; font-size: 14px; padding: 0 2px; opacity: 0.6;
+    flex-shrink: 0;
+  }
+  .sb-error__close:hover { opacity: 1; }
+  .sb-err-fade-enter-active, .sb-err-fade-leave-active { transition: opacity 0.2s, transform 0.2s; }
+  .sb-err-fade-enter-from, .sb-err-fade-leave-to { opacity: 0; transform: translateY(-4px); }
 
-/* ── Submit ── */
-.sb-submit {
-  width: 100%; padding: 13px;
-  background: #3d7a52; color: #fff;
-  border: none; border-radius: 10px;
-  font-size: 15px; font-weight: 600; cursor: pointer;
-  font-family: inherit; transition: background 0.18s;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-}
-.sb-submit:hover:not(:disabled) { background: #2a5c3a; }
-.sb-submit:disabled { opacity: 0.6; cursor: not-allowed; }
-.sb-spinner {
-  width: 16px; height: 16px;
-  border: 2px solid rgba(255,255,255,0.4);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
+  /* ── Submit ── */
+  .sb-submit {
+    width: 100%; padding: 13px;
+    background: #3d7a52; color: #fff;
+    border: none; border-radius: 10px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+    font-family: inherit; transition: background 0.18s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .sb-submit:hover:not(:disabled) { background: #2a5c3a; }
+  .sb-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+  .sb-spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── Modal ── */
-.sb-modal-backdrop {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,.45);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 200; padding: 1rem;
-}
-.sb-modal {
-  background: #fff; border-radius: 14px;
-  padding: 1.5rem; width: 280px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.2);
-}
-.sb-modal--success { width: 320px; text-align: center; }
-.sb-modal__title {
-  font-size: 15px; font-weight: 600; color: #1a3d28;
-  margin: 0 0 1rem; font-family: 'Noto Serif TC', serif;
-}
-.sb-modal__content {
-  font-size: 13px; color: #3a4e36; background: #f4f9f2;
-  border-radius: 8px; padding: 12px; white-space: pre-wrap;
-  text-align: left; margin: 0 0 0.75rem; line-height: 1.7; font-family: inherit;
-}
-.sb-modal__redirect-hint {
-  font-size: 12px; color: #8a9e84; margin: 0 0 0.75rem;
-}
-.sb-modal__success-icon {
-  width: 48px; height: 48px; border-radius: 50%;
-  background: #e8f5ee; display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 0.75rem;
-}
-.sb-modal__success-icon svg { width: 26px; height: 26px; color: #3d7a52; }
-.sb-modal__btns { display: flex; gap: 8px; }
-.sb-modal__btns button {
-  flex: 1; padding: 9px;
-  border: 1.5px solid #c5d4be; border-radius: 8px;
-  cursor: pointer; font-size: 14px; background: #fafcf9;
-  color: #3a4e36; font-family: inherit; transition: background 0.15s;
-}
-.sb-modal__btns button.confirm {
-  background: #3d7a52; color: #fff; border-color: #3d7a52;
-}
-.sb-modal__btns button.confirm:hover { background: #2a5c3a; }
+  /* ── Modal ── */
+  .sb-modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200; padding: 1rem;
+  }
+  .sb-modal {
+    background: #fff; border-radius: 14px;
+    padding: 1.5rem; width: 280px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+  }
+  .sb-modal--success { width: 320px; text-align: center; }
+  .sb-modal__title {
+    font-size: 15px; font-weight: 600; color: #1a3d28;
+    margin: 0 0 1rem; font-family: 'Noto Serif TC', serif;
+  }
+  .sb-modal__content {
+    font-size: 13px; color: #3a4e36; background: #f4f9f2;
+    border-radius: 8px; padding: 12px; white-space: pre-wrap;
+    text-align: left; margin: 0 0 0.75rem; line-height: 1.7; font-family: inherit;
+  }
+  .sb-modal__redirect-hint {
+    font-size: 12px; color: #8a9e84; margin: 0 0 0.75rem;
+  }
+  .sb-modal__success-icon {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: #e8f5ee; display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 0.75rem;
+  }
+  .sb-modal__success-icon svg { width: 26px; height: 26px; color: #3d7a52; }
+  .sb-modal__btns { display: flex; gap: 8px; }
+  .sb-modal__btns button {
+    flex: 1; padding: 9px;
+    border: 1.5px solid #c5d4be; border-radius: 8px;
+    cursor: pointer; font-size: 14px; background: #fafcf9;
+    color: #3a4e36; font-family: inherit; transition: background 0.15s;
+  }
+  .sb-modal__btns button.confirm {
+    background: #3d7a52; color: #fff; border-color: #3d7a52;
+  }
+  .sb-modal__btns button.confirm:hover { background: #2a5c3a; }
 
-/* ── Transitions ── */
-.sb-modal-fade-enter-active, .sb-modal-fade-leave-active { transition: opacity 0.2s; }
-.sb-modal-fade-enter-from, .sb-modal-fade-leave-to { opacity: 0; }
+  /* ── Transitions ── */
+  .sb-modal-fade-enter-active, .sb-modal-fade-leave-active { transition: opacity 0.2s; }
+  .sb-modal-fade-enter-from, .sb-modal-fade-leave-to { opacity: 0; }
 </style>
