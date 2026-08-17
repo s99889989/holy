@@ -46,7 +46,11 @@
   const qrModalOpen = ref(false)
   const qrCodeUrl = computed(() => {
     if (!customer.value?.email) return ''
-    const payload = JSON.stringify({ name: customer.value.name || '', email: customer.value.email })
+    // 內容整體用 encodeURIComponent 轉成純 ASCII（%XX 編碼），
+    // 因為部分實體條碼掃描器（如 DK-7322）是用 USB 鍵盤模擬方式輸出，
+    // 只能「打字」出標準鍵盤按鍵，無法正確輸出中文姓名，
+    // 純 ASCII 內容才能確保掃描器和相機掃描都能正確讀出完整資料
+    const payload = encodeURIComponent(JSON.stringify({ name: customer.value.name || '', email: customer.value.email }))
     return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=8&data=${encodeURIComponent(payload)}`
   })
   const openQrModal = () => {
