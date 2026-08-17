@@ -9,8 +9,8 @@ const venues = [
   { name: '活動中心', location: '', capacity: '500', activities: '大型活動，活動，會議', price: 6000, equipment: ['D擴音設備', 'F飲水機', 'G桌子', 'H椅子'], images: [] },
   { name: '療癒森林大草坪', location: '', capacity: '500', activities: '戶外活動，野餐', price: 6000, equipment: [], images: [] },
   { name: '烘培坊烘培教室', location: '', capacity: '20', activities: '烘培教室，活動', price: 6000, equipment: ['E冷氣', 'F飲水機', 'G桌子'], images: [] },
-  { name: '快樂競技館', location: '', capacity: '30', activities: '運動課程，活動', price: 5000, equipment: ['B 液晶螢幕', 'E冷氣', 'F飲水機', 'G桌子', 'Ｃ電腦'], images: [] },
-  { name: '樂活教室', location: '', capacity: '40-60', activities: '中型會議，聚會', price: 5000, equipment: ['A 投影機', 'D擴音設備', 'E冷氣', 'F飲水機', 'G桌子', 'Ｃ電腦'], images: [] },
+  { name: '快樂競技館', location: '', capacity: '30', activities: '運動課程，活動', price: 6000, equipment: ['B 液晶螢幕', 'E冷氣', 'F飲水機', 'G桌子', 'Ｃ電腦'], images: [] },
+  { name: '樂活教室', location: '', capacity: '40-60', activities: '中型會議，聚會', price: 6000, equipment: ['A 投影機', 'D擴音設備', 'E冷氣', 'F飲水機', 'G桌子', 'Ｃ電腦'], images: [] },
   { name: '聖堂', location: 'A棟', capacity: '100', activities: '禮儀，祈禱，靈修', price: 4000, equipment: ['D擴音設備', 'E冷氣', 'H椅子'], images: [] },
   { name: '心靈教室', location: '', capacity: '30', activities: '禮儀，祈禱，靈修', price: 4000, equipment: ['B 液晶螢幕', 'D擴音設備', 'E冷氣', 'F飲水機', 'H椅子', 'Ｃ電腦'], images: [] },
   { name: '快樂運動館樂功能軟墊教室', location: '', capacity: '25-30', activities: '運動，活動，小團體', price: 4000, equipment: ['A 投影機', 'D擴音設備', 'E冷氣', 'Ｃ電腦'], images: [] },
@@ -24,7 +24,7 @@ const venues = [
   { name: '靈修中心客廳', location: '', capacity: '16', activities: '講習，工作坊，靈修', price: 2500, equipment: ['B 液晶螢幕', 'E冷氣', 'F飲水機', 'G桌子', 'H椅子'], images: [] },
   { name: '接待室及小會議室', location: '', capacity: '12', activities: '會談，小型會議，聚會', price: 2500, equipment: ['B 液晶螢幕', 'E冷氣', 'F飲水機', 'G桌子', 'H椅子', 'Ｃ電腦'], images: [] },
   { name: '營火場', location: '', capacity: '150', activities: '營火', price: 2000, equipment: [], images: [] },
-  { name: '多功能教室', location: '', capacity: '', activities: '', price: null, equipment: [], images: ['1757388033567.jpg', '1757388037022.jpg', '1757388035355.jpg', '1757388038676.jpg'] },
+  { name: '多功能教室', location: '', capacity: '', activities: '', price: 6000, equipment: [], images: ['1757388033567.jpg', '1757388037022.jpg', '1757388035355.jpg', '1757388038676.jpg'] },
 ]
 
 const filters = [
