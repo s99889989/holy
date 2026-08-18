@@ -160,10 +160,10 @@
   // 「農莊體驗」子項目
   const experienceItems = [
     { to: '/front/event',              label: '活動報名' },
-    { to: '/front/trial-courses',      label: '體驗課程' },
     { to: '/front/herbs', label: '香藥草圖鑑' },
-    { to: '/front/group-accommodation',label: '團體住宿' },
-    { to: '/front/venue-rental',       label: '場地租借' },
+    // { to: '/front/trial-courses',      label: '體驗課程' },
+    // { to: '/front/group-accommodation',label: '團體住宿' },
+    // { to: '/front/venue-rental',       label: '場地租借' },
     { to: '/front/park-map',            label: '園區地圖' },
   ]
 
