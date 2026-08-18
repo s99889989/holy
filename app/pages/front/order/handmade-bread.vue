@@ -58,6 +58,20 @@ function itemByCode(code) {
   return items.value.find(i => i.code === code)
 }
 
+// ── 品項圖片 ────────────────────────────────────────────────────
+function imgUrl(path) {
+  if (!path) return ''
+  return path.startsWith('http') ? path : commonStore.data.main_url + path
+}
+
+function thumbUrl(path) {
+  if (!path) return ''
+  const full = imgUrl(path)
+  return full.replace('/holy/handmade-bread/image/', '/holy/handmade-bread/image/thumb/')
+}
+
+const previewUrl = ref('')
+
 // ── 日期工具 ────────────────────────────────────────────────────
 function getNext(dow, offsetWeeks = 0) {
   const now = new Date()
@@ -630,6 +644,10 @@ onMounted(async () => {
         </div>
         <div v-if="packageShowAll" class="hb-item-list">
           <div v-for="item in items" :key="item.code" class="hb-order-row">
+            <div v-if="item.image" class="hb-order-row__img-wrap" @click="previewUrl = imgUrl(item.image)">
+              <img :src="thumbUrl(item.image)" class="hb-order-row__img" alt="">
+            </div>
+            <div v-else class="hb-order-row__img hb-order-row__img--placeholder">🍞</div>
             <div class="hb-order-row__label">
               {{ item.code }}．{{ item.name }}
               <span class="hb-order-row__sub">${{ item.price }}／{{ item.unit }}</span>
@@ -720,6 +738,10 @@ onMounted(async () => {
         </div>
         <div class="hb-order-rows">
           <div v-for="item in items" :key="item.code" class="hb-order-row">
+            <div v-if="item.image" class="hb-order-row__img-wrap" @click="previewUrl = imgUrl(item.image)">
+              <img :src="thumbUrl(item.image)" class="hb-order-row__img" alt="">
+            </div>
+            <div v-else class="hb-order-row__img hb-order-row__img--placeholder">🍞</div>
             <div class="hb-order-row__label">
               {{ item.code }}．{{ item.name }}
               <span class="hb-order-row__sub">${{ item.price }}／{{ item.unit }}</span>
@@ -804,6 +826,15 @@ onMounted(async () => {
       </Transition>
     </Teleport>
 
+    <!-- 品項圖片預覽 -->
+    <Teleport to="body">
+      <Transition name="hb-modal-fade">
+        <div v-if="previewUrl" class="hb-modal-backdrop" @click.self="previewUrl = ''">
+          <img :src="previewUrl" class="hb-img-preview" alt="" @click="previewUrl = ''">
+        </div>
+      </Transition>
+    </Teleport>
+
   </div>
 </template>
 
@@ -830,14 +861,26 @@ onMounted(async () => {
   gap: 1rem;
 }
 
+.hb-header__logo {
+  flex-shrink: 0;
+  line-height: 0;
+}
+
 .hb-header__logo-img {
   height: 44px;
   filter: brightness(0) invert(1);
   opacity: 0.9;
 }
 
+/* flex-basis:0% 讓 title/sub 這個區塊拿到所有剩餘空間；
+   min-width:0 是關鍵：沒有這行，中文字（CJK）沒有空白可斷行，
+   瀏覽器會把「自動最小寬度」算成單一個字寬，導致極端窄的情況下
+   整段文字被硬擠成一字一行、直直往下疊（手機上尤其明顯）。
+   搭配下面 title/sub 的 nowrap + ellipsis，超出寬度就改成省略號，
+   不會再有這種疊字問題。 */
 .hb-header__text {
-  flex: 1;
+  flex: 1 1 0%;
+  min-width: 0;
 }
 
 .hb-header__title {
@@ -846,17 +889,24 @@ onMounted(async () => {
   font-weight: 700;
   color: #fff;
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hb-header__sub {
   font-size: 12px;
   color: #f0ddc8;
   margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── 登入區塊 ── */
 .hb-login-area {
   position: relative;
+  flex-shrink: 0;
 }
 
 .hb-login-btn {
@@ -1355,6 +1405,35 @@ onMounted(async () => {
   border-radius: 8px;
 }
 
+.hb-order-row__img-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  cursor: zoom-in;
+  background: #f1e6d3;
+}
+
+.hb-order-row__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.hb-order-row__img--placeholder {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: #f1e6d3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
 .hb-order-row__label {
   flex: 1;
   font-size: 13.5px;
@@ -1556,6 +1635,14 @@ onMounted(async () => {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
 }
 
+.hb-img-preview {
+  max-width: 92vw;
+  max-height: 85vh;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+  cursor: zoom-out;
+}
+
 .hb-modal--success {
   width: 320px;
   text-align: center;
@@ -1642,5 +1729,33 @@ onMounted(async () => {
 
 .hb-modal-fade-enter-from, .hb-modal-fade-leave-to {
   opacity: 0;
+}
+
+/* ── 極窄螢幕（舊款小手機、瀏覽器 App 內嵌視窗）額外收緊 header ── */
+@media (max-width: 360px) {
+  .hb-header {
+    padding: 1rem 1rem;
+  }
+
+  .hb-header__inner {
+    gap: 0.6rem;
+  }
+
+  .hb-header__logo-img {
+    height: 34px;
+  }
+
+  .hb-header__title {
+    font-size: 1rem;
+  }
+
+  .hb-header__sub {
+    font-size: 11px;
+  }
+
+  .hb-login-btn {
+    padding: 5px 10px;
+    font-size: 11.5px;
+  }
 }
 </style>

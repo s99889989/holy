@@ -31,11 +31,13 @@ const BASE          = computed(() => commonStore.data.main_url + '/holy/customer
 const BOOKING_BASE  = computed(() => commonStore.data.main_url + '/holy/booking')
 const LUNCH_BASE    = computed(() => commonStore.data.main_url + '/holy/lunch')
 const SOYBEAN_BASE  = computed(() => commonStore.data.main_url + '/holy/soybean')
+const BREAD_BASE    = computed(() => commonStore.data.main_url + '/holy/handmade-bread')
 
 const customer = computed(() => customerStore.customer)
 const activeTab = ref('soybeans')
 const tabs = [
   { key: 'soybeans',  label: '豆漿紀錄' },
+  { key: 'breads',    label: '麵包紀錄' },
   { key: 'bookings',  label: '訂位紀錄' },
   { key: 'lunches',   label: '便當紀錄' },
 ]
@@ -43,9 +45,11 @@ const tabs = [
 const bookings  = ref([])
 const lunches   = ref([])
 const soybeans  = ref([])
+const breads    = ref([])
 const bookingsLoading  = ref(false)
 const lunchesLoading   = ref(false)
 const soybeansLoading  = ref(false)
+const breadsLoading    = ref(false)
 const refreshing       = ref(false)
 
 const refresh = async () => {
@@ -59,22 +63,26 @@ const fetchAll = async (showLoading = false) => {
     bookingsLoading.value  = true
     lunchesLoading.value   = true
     soybeansLoading.value  = true
+    breadsLoading.value    = true
   }
   try {
     const cid = customerStore.customer?.id ?? ''
-    const [b, l, s] = await Promise.all([
+    const [b, l, s, hb] = await Promise.all([
       fetch(`${BASE.value}/bookings?customerId=${cid}`, {credentials: 'include'}).then(r => r.json()),
       fetch(`${BASE.value}/lunches?customerId=${cid}`, {credentials: 'include'}).then(r => r.json()),
       fetch(`${SOYBEAN_BASE.value}/orders?customerId=${cid}`, {credentials: 'include'}).then(r => r.json()),
+      fetch(`${BREAD_BASE.value}/orders?customerId=${cid}`, {credentials: 'include'}).then(r => r.json()),
     ])
     bookings.value  = Array.isArray(b) ? b : []
     lunches.value   = Array.isArray(l) ? l : []
     soybeans.value  = Array.isArray(s) ? s : []
+    breads.value    = Array.isArray(hb?.orders) ? hb.orders : []
   } catch {
   } finally {
     bookingsLoading.value  = false
     lunchesLoading.value   = false
     soybeansLoading.value  = false
+    breadsLoading.value    = false
   }
 }
 
@@ -86,6 +94,7 @@ const logout = async () => {
   bookings.value  = []
   lunches.value   = []
   soybeans.value  = []
+  breads.value    = []
 }
 
 // ── 狀態 Badge ────────────────────────────────────────────────────
@@ -93,6 +102,7 @@ const statusClass = (status) => {
   const map = {
     '待確認':      'profile-badge--warning',
     '已確認':      'profile-badge--success',
+    '已付款':      'profile-badge--teal',
     '已入位':      'profile-badge--teal',
     '已取餐':      'profile-badge--teal',
     '已取貨':      'profile-badge--teal',
@@ -279,11 +289,125 @@ const confirmCancelSoybean = async () => {
   }
 }
 
+// ── 麵包：狀態說明 ────────────────────────────────────────────────
+const breadHints = {
+  '待確認': '我們已收到您的預約，將盡快確認您的取貨日期與品項。',
+  '已確認': '訂單已確認，請於取貨日前來取貨！',
+  '已付款': '款項已收到，請於取貨日前來取貨！',
+  '已取貨': '感謝您的訂購，歡迎再次訂購！',
+  '已取消': '此筆訂單已取消，歡迎再次訂購。',
+}
+
+const breadPickupLabel = (o) => {
+  if (!o.pickupDate) return ''
+  const weekNames = ['日', '一', '二', '三', '四', '五', '六']
+  const d = new Date(o.pickupDate)
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  const w = weekNames[d.getDay()]
+  return `${m}/${day}（週${w}）`
+}
+
+const breadItems = (o) => {
+  const arr = Array.isArray(o.items) ? o.items : []
+  return arr.map(it => `${it.code}．${it.name} × ${it.qty}`)
+}
+
+// ── 麵包：品項清單（供修改數量 Modal 用）──────────────────────────
+const breadCatalog = ref([]) // [{code,name,price,unit,active,image}]
+const fetchBreadCatalog = async () => {
+  try {
+    const res = await fetch(`${BREAD_BASE.value}/settings/items`)
+    const data = await res.json()
+    if (Array.isArray(data.items)) breadCatalog.value = data.items
+  } catch {
+  }
+}
+
+// ── 麵包：修改數量 Modal ──────────────────────────────────────────
+const editBreadModal = ref({ show: false, item: null, itemQty: {}, submitting: false })
+
+const openEditBread = (o) => {
+  const qty = {}
+  breadCatalog.value.forEach(it => { qty[it.code] = 0 })
+  ;(o.items || []).forEach(it => { qty[it.code] = it.qty })
+  editBreadModal.value = { show: true, item: o, itemQty: qty, submitting: false }
+}
+const closeEditBread = () => {
+  editBreadModal.value = { show: false, item: null, itemQty: {}, submitting: false }
+}
+const adjEditBreadQty = (code, delta) => {
+  const cur = editBreadModal.value.itemQty[code] || 0
+  editBreadModal.value.itemQty[code] = Math.max(0, cur + delta)
+}
+const editBreadTotal = computed(() => {
+  let total = 0
+  for (const it of breadCatalog.value) {
+    total += (editBreadModal.value.itemQty[it.code] || 0) * (it.price || 0)
+  }
+  return total
+})
+
+const confirmEditBread = async () => {
+  const { item, itemQty } = editBreadModal.value
+  if (!item) return
+  const items = Object.entries(itemQty).filter(([, q]) => q > 0).map(([code, qty]) => ({ code, qty }))
+  if (items.length === 0) { alert('請至少選擇一款麵包'); return }
+  editBreadModal.value.submitting = true
+  try {
+    const res = await fetch(`${BREAD_BASE.value}/order/${item.month}/${item.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ items }),
+    })
+    const data = await res.json()
+    if (data.error) { alert('修改失敗：' + data.error); return }
+    const found = breads.value.find(b => b.id === item.id)
+    if (found) {
+      found.items = breadCatalog.value
+          .filter(it => itemQty[it.code] > 0)
+          .map(it => ({ code: it.code, name: it.name, price: it.price, qty: itemQty[it.code] }))
+      found.totalAmount = editBreadTotal.value
+    }
+    closeEditBread()
+  } catch {
+    editBreadModal.value.submitting = false
+  }
+}
+
+// ── 麵包：取消訂單 Modal ──────────────────────────────────────────
+const cancelBreadModal = ref({ show: false, item: null, submitting: false })
+
+const openCancelBread = (o) => {
+  cancelBreadModal.value = { show: true, item: o, submitting: false }
+}
+const closeCancelBread = () => {
+  cancelBreadModal.value = { show: false, item: null, submitting: false }
+}
+
+const confirmCancelBread = async () => {
+  const { item } = cancelBreadModal.value
+  if (!item) return
+  cancelBreadModal.value.submitting = true
+  try {
+    await fetch(`${BREAD_BASE.value}/admin/status/${item.month}/${item.id}?status=${encodeURIComponent('已取消')}`, {
+      method: 'PATCH',
+      credentials: 'include',
+    })
+    item.status = '已取消'
+    closeCancelBread()
+  } catch {
+    cancelBreadModal.value.submitting = false
+  }
+}
+
 onMounted(async () => {
   const route = useRoute()
   if (route.query.tab) activeTab.value = route.query.tab
   // hints 不需登入，頁面一開始就拉
   fetchSoybeanHints()
+  fetchBreadCatalog()
   if (customer.value) await fetchAll(true)
 })
 
@@ -295,6 +419,7 @@ watch(customer, async (c) => {
     bookings.value  = []
     lunches.value   = []
     soybeans.value  = []
+    breads.value    = []
   }
 })
 </script>
@@ -459,6 +584,41 @@ watch(customer, async (c) => {
                     </div>
                   </div>
 
+                  <!-- 麵包紀錄 -->
+                  <div v-if="activeTab === 'breads'">
+                    <div v-if="breadsLoading" class="profile-loading">載入中…</div>
+                    <div v-else-if="breads.length === 0" class="profile-empty-tab">
+                      尚無麵包預購紀錄
+                    </div>
+                    <div v-else>
+                      <div v-for="o in breads" :key="o.id" class="profile-card">
+                        <div class="profile-card__date profile-card__date--amber">
+                          <p class="profile-card__date-month">{{ o.pickupDate?.substring(0, 7) }}</p>
+                          <p class="profile-card__date-day profile-card__date-day--amber">{{ o.pickupDate?.substring(8, 10) }}</p>
+                        </div>
+                        <div class="profile-card__body">
+                          <div class="profile-card__row">
+                            <span class="profile-card__name">{{ o.name }}</span>
+                            <span class="profile-badge" :class="statusClass(o.status)">{{ o.status }}</span>
+                          </div>
+                          <div class="profile-card__meta">
+                            <span>📅 {{ breadPickupLabel(o) }} 取貨</span>
+                            <span v-for="item in breadItems(o)" :key="item">🥖 {{ item }}</span>
+                            <span class="profile-card__price">合計 ${{ o.totalAmount }}</span>
+                          </div>
+                          <p v-if="o.remark" class="profile-card__note">備註：{{ o.remark }}</p>
+                          <p v-if="breadHints[o.status]" class="profile-card__hint" :class="'profile-hint--' + o.status">
+                            {{ breadHints[o.status] }}
+                          </p>
+                          <div v-if="o.status === '待確認'" class="profile-card__actions">
+                            <button @click="openEditBread(o)" class="profile-edit-btn">修改數量</button>
+                            <button @click="openCancelBread(o)" class="profile-cancel-btn">取消訂單</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                 </template>
 
               </div>
@@ -579,6 +739,72 @@ watch(customer, async (c) => {
               <button class="cmodal__btn cmodal__btn--confirm" @click="confirmCancelSoybean" :disabled="cancelSoybeanModal.submitting">
                 <span v-if="cancelSoybeanModal.submitting" class="cmodal__spinner"></span>
                 {{ cancelSoybeanModal.submitting ? '送出中…' : '確認取消' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 麵包：修改數量 Modal -->
+    <Teleport to="body">
+      <Transition name="cmodal">
+        <div v-if="editBreadModal.show" class="cmodal-backdrop" @click.self="closeEditBread">
+          <div class="cmodal">
+            <div class="cmodal__icon cmodal__icon--green">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+              </svg>
+            </div>
+            <h3 class="cmodal__title">修改訂購數量</h3>
+            <div class="cmodal__edit-rows">
+              <div v-for="it in breadCatalog" :key="it.code" class="cmodal__edit-row">
+                <span class="cmodal__edit-label">{{ it.code }}．{{ it.name }}（${{ it.price }}/{{ it.unit }}）</span>
+                <div class="cmodal__qty-ctrl">
+                  <button @click="adjEditBreadQty(it.code, -1)">−</button>
+                  <span>{{ editBreadModal.itemQty[it.code] || 0 }}</span>
+                  <button @click="adjEditBreadQty(it.code, 1)">+</button>
+                </div>
+              </div>
+              <div class="cmodal__edit-total">
+                合計 ${{ editBreadTotal }}
+              </div>
+            </div>
+            <div class="cmodal__btns">
+              <button class="cmodal__btn cmodal__btn--cancel" @click="closeEditBread" :disabled="editBreadModal.submitting">返回</button>
+              <button class="cmodal__btn cmodal__btn--green" @click="confirmEditBread" :disabled="editBreadModal.submitting">
+                <span v-if="editBreadModal.submitting" class="cmodal__spinner"></span>
+                {{ editBreadModal.submitting ? '送出中…' : '確認修改' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 麵包：取消訂單 Modal -->
+    <Teleport to="body">
+      <Transition name="cmodal">
+        <div v-if="cancelBreadModal.show" class="cmodal-backdrop" @click.self="closeCancelBread">
+          <div class="cmodal">
+            <div class="cmodal__icon">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+              </svg>
+            </div>
+            <h3 class="cmodal__title">確認取消訂單？</h3>
+            <p class="cmodal__msg">
+              取貨日：<strong>{{ breadPickupLabel(cancelBreadModal.item) }}</strong><br>
+              <template v-if="cancelBreadModal.item">
+                <span v-for="item in breadItems(cancelBreadModal.item)" :key="item">{{ item }}　</span>
+              </template>
+            </p>
+            <div class="cmodal__btns">
+              <button class="cmodal__btn cmodal__btn--cancel" @click="closeCancelBread" :disabled="cancelBreadModal.submitting">返回</button>
+              <button class="cmodal__btn cmodal__btn--confirm" @click="confirmCancelBread" :disabled="cancelBreadModal.submitting">
+                <span v-if="cancelBreadModal.submitting" class="cmodal__spinner"></span>
+                {{ cancelBreadModal.submitting ? '送出中…' : '確認取消' }}
               </button>
             </div>
           </div>
@@ -738,6 +964,7 @@ watch(customer, async (c) => {
 }
 .profile-hint--待確認      { background: #fff8e6; color: #856404; }
 .profile-hint--已確認      { background: #eaf7f2; color: #0d6e4f; }
+.profile-hint--已付款      { background: #eaf7f2; color: #0d6e4f; }
 .profile-hint--已入位      { background: #e6f7f4; color: #0a7a63; }
 .profile-hint--已取餐      { background: #e6f7f4; color: #0a7a63; }
 .profile-hint--已取貨      { background: #e6f7f4; color: #0a7a63; }
