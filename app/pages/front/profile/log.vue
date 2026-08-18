@@ -1176,4 +1176,5 @@ watch(customer, async (c) => {
   text-align: right; font-size: 14px; font-weight: 700;
   color: #1a3d28; padding-top: 10px;
 }
+
 </style>
