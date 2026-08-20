@@ -214,6 +214,7 @@
                 </div>
               </div>
               <NuxtLink to="/front/profile/log" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">我的紀錄</NuxtLink>
+              <NuxtLink to="/front/profile/body-composition" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">身體組成分析</NuxtLink>
               <NuxtLink to="/front/profile/settings" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">帳號設定</NuxtLink>
               <button @click="openQrModal" class="mob-avatar-dropdown__link mob-avatar-dropdown__link--btn">展示個人QRCode</button>
               <a v-if="canAccessStaff" href="https://holymotherfarm.netlify.app/staff/home" target="_blank" rel="noopener noreferrer" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link mob-avatar-dropdown__link--staff">員工專區</a>
@@ -418,6 +419,15 @@
                           d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                   </svg>
                   我的紀錄
+                </NuxtLink>
+              </li>
+              <li>
+                <NuxtLink to="/front/profile/body-composition" @click="closeAvatar" class="avatar-dropdown__item">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 3v3m0 12v3m-9-9h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6l2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6l2.1-2.1"/><circle cx="12" cy="12" r="4"/>
+                  </svg>
+                  身體組成分析
                 </NuxtLink>
               </li>
               <li>
