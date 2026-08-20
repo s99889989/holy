@@ -1,184 +1,184 @@
 <script setup>
-  import {ref, computed, onMounted, onUnmounted, nextTick} from 'vue'
-  import {useCommonStore} from '~/stores/common.js'
-  import {useCustomerStore} from '~/stores/customer.js'
-  import {usePermissionStore} from '~/stores/permission.js'
+import {ref, computed, onMounted, onUnmounted, nextTick} from 'vue'
+import {useCommonStore} from '~/stores/common.js'
+import {useCustomerStore} from '~/stores/customer.js'
+import {usePermissionStore} from '~/stores/permission.js'
 
-  const isOpen = ref(false)
-  const route = useRoute()
+const isOpen = ref(false)
+const route = useRoute()
 
-  // 手機版「農莊體驗」子選單開合
-  const mobExperienceOpen = ref(false)
+// 手機版「農莊體驗」子選單開合
+const mobExperienceOpen = ref(false)
 
-  // 換頁時自動關閉所有選單
-  watch(() => route.path, () => {
-    isOpen.value = false
-    mobAvatarOpen.value = false
-    mobExperienceOpen.value = false
-  })
+// 換頁時自動關閉所有選單
+watch(() => route.path, () => {
+  isOpen.value = false
+  mobAvatarOpen.value = false
+  mobExperienceOpen.value = false
+})
 
-  function toggleMenu() {
-    isOpen.value = !isOpen.value
-    if (isOpen.value) mobAvatarOpen.value = false
+function toggleMenu() {
+  isOpen.value = !isOpen.value
+  if (isOpen.value) mobAvatarOpen.value = false
+}
+
+// ── 桌機頭像下拉 ──────────────────────────────────────────────────────
+const commonStore = useCommonStore()
+const customerStore = useCustomerStore()
+const BASE = computed(() => commonStore.data.main_url + '/holy/customer')
+const GOOGLE_CLIENT_ID = computed(() => commonStore.data.google_client_id)
+
+const avatarOpen = ref(false)
+const avatarRef = ref(null)
+const customer = computed(() => customerStore.customer)
+const permissionStore = usePermissionStore()
+const canAccessStaff = computed(() => permissionStore.can('staff.home'))
+
+const toggleAvatar = () => {
+  avatarOpen.value = !avatarOpen.value
+  if (avatarOpen.value && !customer.value) {
+    nextTick(() => renderGoogleBtn('nav-google-btn'))
   }
+}
+const closeAvatar = () => { avatarOpen.value = false }
 
-  // ── 桌機頭像下拉 ──────────────────────────────────────────────────────
-  const commonStore = useCommonStore()
-  const customerStore = useCustomerStore()
-  const BASE = computed(() => commonStore.data.main_url + '/holy/customer')
-  const GOOGLE_CLIENT_ID = computed(() => commonStore.data.google_client_id)
+// ── 個人 QRCode ───────────────────────────────────────────────────
+const qrModalOpen = ref(false)
+const qrCodeUrl = computed(() => {
+  if (!customer.value?.email) return ''
+  // 內容整體用 encodeURIComponent 轉成純 ASCII（%XX 編碼），
+  // 因為部分實體條碼掃描器（如 DK-7322）是用 USB 鍵盤模擬方式輸出，
+  // 只能「打字」出標準鍵盤按鍵，無法正確輸出中文姓名，
+  // 純 ASCII 內容才能確保掃描器和相機掃描都能正確讀出完整資料
+  const payload = encodeURIComponent(JSON.stringify({ name: customer.value.name || '', email: customer.value.email }))
+  return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=8&data=${encodeURIComponent(payload)}`
+})
+const openQrModal = () => {
+  qrModalOpen.value = true
+  avatarOpen.value = false
+  mobAvatarOpen.value = false
+}
+const closeQrModal = () => { qrModalOpen.value = false }
 
-  const avatarOpen = ref(false)
-  const avatarRef = ref(null)
-  const customer = computed(() => customerStore.customer)
-  const permissionStore = usePermissionStore()
-  const canAccessStaff = computed(() => permissionStore.can('staff.home'))
+// ── 手機版頭像下拉 ────────────────────────────────────────────────────
+const mobAvatarOpen = ref(false)
+const mobAvatarRef = ref(null)
 
-  const toggleAvatar = () => {
-    avatarOpen.value = !avatarOpen.value
-    if (avatarOpen.value && !customer.value) {
-      nextTick(() => renderGoogleBtn('nav-google-btn'))
-    }
+const toggleMobAvatar = () => {
+  mobAvatarOpen.value = !mobAvatarOpen.value
+  if (mobAvatarOpen.value) isOpen.value = false
+  if (mobAvatarOpen.value && !customer.value) {
+    nextTick(() => renderGoogleBtn('nav-google-btn-mobile'))
   }
-  const closeAvatar = () => { avatarOpen.value = false }
+}
 
-  // ── 個人 QRCode ───────────────────────────────────────────────────
-  const qrModalOpen = ref(false)
-  const qrCodeUrl = computed(() => {
-    if (!customer.value?.email) return ''
-    // 內容整體用 encodeURIComponent 轉成純 ASCII（%XX 編碼），
-    // 因為部分實體條碼掃描器（如 DK-7322）是用 USB 鍵盤模擬方式輸出，
-    // 只能「打字」出標準鍵盤按鍵，無法正確輸出中文姓名，
-    // 純 ASCII 內容才能確保掃描器和相機掃描都能正確讀出完整資料
-    const payload = encodeURIComponent(JSON.stringify({ name: customer.value.name || '', email: customer.value.email }))
-    return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=8&data=${encodeURIComponent(payload)}`
-  })
-  const openQrModal = () => {
-    qrModalOpen.value = true
+const onClickOutside = (e) => {
+  if (avatarRef.value && !avatarRef.value.contains(e.target)) {
     avatarOpen.value = false
+  }
+  if (mobAvatarRef.value && !mobAvatarRef.value.contains(e.target)) {
     mobAvatarOpen.value = false
   }
-  const closeQrModal = () => { qrModalOpen.value = false }
+}
 
-  // ── 手機版頭像下拉 ────────────────────────────────────────────────────
-  const mobAvatarOpen = ref(false)
-  const mobAvatarRef = ref(null)
+// ── Google 登入 ───────────────────────────────────────────────────
+const initGoogle = () => {
+  if (!window.google) return
+  window.google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID.value,
+    callback: handleCredential,
+    auto_select: false,
+  })
+}
 
-  const toggleMobAvatar = () => {
-    mobAvatarOpen.value = !mobAvatarOpen.value
-    if (mobAvatarOpen.value) isOpen.value = false
-    if (mobAvatarOpen.value && !customer.value) {
-      nextTick(() => renderGoogleBtn('nav-google-btn-mobile'))
-    }
-  }
+const renderGoogleBtn = (elId) => {
+  if (!window.google) return
+  const el = document.getElementById(elId)
+  if (!el) return
+  window.google.accounts.id.renderButton(el, {
+    theme: 'outline', size: 'medium', text: 'signin_with', locale: 'zh-TW', width: 220,
+  })
+}
 
-  const onClickOutside = (e) => {
-    if (avatarRef.value && !avatarRef.value.contains(e.target)) {
+const handleCredential = async (response) => {
+  try {
+    const res = await fetch(`${BASE.value}/google-login`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({credential: response.credential})
+    })
+    const data = await res.json()
+    if (!data.error) {
+      customerStore.setCustomer(data)
+      await permissionStore.load(data.id, commonStore.data.main_url)
       avatarOpen.value = false
-    }
-    if (mobAvatarRef.value && !mobAvatarRef.value.contains(e.target)) {
       mobAvatarOpen.value = false
     }
-  }
+  } catch {}
+}
 
-  // ── Google 登入 ───────────────────────────────────────────────────
-  const initGoogle = () => {
-    if (!window.google) return
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID.value,
-      callback: handleCredential,
-      auto_select: false,
-    })
-  }
+const logout = async () => {
+  await fetch(`${BASE.value}/logout`, {method: 'POST', credentials: 'include'})
+  customerStore.clearCustomer()
+  permissionStore.clear()
+  avatarOpen.value = false
+  mobAvatarOpen.value = false
+}
 
-  const renderGoogleBtn = (elId) => {
-    if (!window.google) return
-    const el = document.getElementById(elId)
-    if (!el) return
-    window.google.accounts.id.renderButton(el, {
-      theme: 'outline', size: 'medium', text: 'signin_with', locale: 'zh-TW', width: 220,
-    })
-  }
-
-  const handleCredential = async (response) => {
-    try {
-      const res = await fetch(`${BASE.value}/google-login`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        credentials: 'include',
-        body: JSON.stringify({credential: response.credential})
-      })
-      const data = await res.json()
-      if (!data.error) {
-        customerStore.setCustomer(data)
-        await permissionStore.load(data.id, commonStore.data.main_url)
-        avatarOpen.value = false
-        mobAvatarOpen.value = false
-      }
-    } catch {}
-  }
-
-  const logout = async () => {
-    await fetch(`${BASE.value}/logout`, {method: 'POST', credentials: 'include'})
-    customerStore.clearCustomer()
-    permissionStore.clear()
-    avatarOpen.value = false
-    mobAvatarOpen.value = false
-  }
-
-  const fetchMe = async () => {
-    try {
-      const data = await (await fetch(`${BASE.value}/me`, {credentials: 'include'})).json()
-      if (!data.error) {
-        customerStore.setCustomer(data)
-        await permissionStore.load(data.id, commonStore.data.main_url)
-      }
-    } catch {}
-  }
-
-  onMounted(async () => {
-    await fetchMe()
-    document.addEventListener('click', onClickOutside)
-
-    if (!document.getElementById('google-gsi-script')) {
-      const script = document.createElement('script')
-      script.id = 'google-gsi-script'
-      script.src = 'https://accounts.google.com/gsi/client'
-      script.async = true
-      script.defer = true
-      script.onload = () => initGoogle()
-      document.head.appendChild(script)
-    } else if (window.google) {
-      initGoogle()
+const fetchMe = async () => {
+  try {
+    const data = await (await fetch(`${BASE.value}/me`, {credentials: 'include'})).json()
+    if (!data.error) {
+      customerStore.setCustomer(data)
+      await permissionStore.load(data.id, commonStore.data.main_url)
     }
-  })
+  } catch {}
+}
 
-  onUnmounted(() => {
-    document.removeEventListener('click', onClickOutside)
-  })
+onMounted(async () => {
+  await fetchMe()
+  document.addEventListener('click', onClickOutside)
 
-  // 「農莊體驗」子項目
-  const experienceItems = [
-    { to: '/front/event',              label: '活動報名' },
-    { to: '/front/herbs', label: '香藥草圖鑑' },
-    // { to: '/front/trial-courses',      label: '體驗課程' },
-    // { to: '/front/group-accommodation',label: '團體住宿' },
-    // { to: '/front/venue-rental',       label: '場地租借' },
-    { to: '/front/park-map',            label: '園區地圖' },
-  ]
+  if (!document.getElementById('google-gsi-script')) {
+    const script = document.createElement('script')
+    script.id = 'google-gsi-script'
+    script.src = 'https://accounts.google.com/gsi/client'
+    script.async = true
+    script.defer = true
+    script.onload = () => initGoogle()
+    document.head.appendChild(script)
+  } else if (window.google) {
+    initGoogle()
+  }
+})
 
-  // 目前路徑是否落在「農莊體驗」任一子項
-  const isExperienceActive = computed(() =>
-          experienceItems.some(item => route.path.startsWith(item.to))
-  )
+onUnmounted(() => {
+  document.removeEventListener('click', onClickOutside)
+})
+
+// 「農莊體驗」子項目
+const experienceItems = [
+  { to: '/front/event',              label: '活動報名' },
+  { to: '/front/herbs', label: '香藥草圖鑑' },
+  // { to: '/front/trial-courses',      label: '體驗課程' },
+  // { to: '/front/group-accommodation',label: '團體住宿' },
+  // { to: '/front/venue-rental',       label: '場地租借' },
+  { to: '/front/park-map',            label: '園區地圖' },
+]
+
+// 目前路徑是否落在「農莊體驗」任一子項
+const isExperienceActive = computed(() =>
+    experienceItems.some(item => route.path.startsWith(item.to))
+)
 </script>
 
 <template>
   <!-- Mobile / Pad Navbar -->
   <nav
-          class="nav d-xl-none nav-shadow"
-          :class="{ open: isOpen }"
-          style="background: url(/images/global/nav-bg.png);"
+      class="nav d-xl-none nav-shadow"
+      :class="{ open: isOpen }"
+      style="background: url(/images/global/nav-bg.png);"
   >
     <div class="nav-header">
       <div class="navLogo">
@@ -215,6 +215,7 @@
               </div>
               <NuxtLink to="/front/profile/log" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">我的紀錄</NuxtLink>
               <NuxtLink to="/front/profile/body-composition" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">身體組成分析</NuxtLink>
+              <NuxtLink to="/front/profile/course-attendance" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">課程簽到情況</NuxtLink>
               <NuxtLink to="/front/profile/settings" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link">帳號設定</NuxtLink>
               <button @click="openQrModal" class="mob-avatar-dropdown__link mob-avatar-dropdown__link--btn">展示個人QRCode</button>
               <a v-if="canAccessStaff" href="https://holymotherfarm.netlify.app/staff/home" target="_blank" rel="noopener noreferrer" @click="mobAvatarOpen = false" class="mob-avatar-dropdown__link mob-avatar-dropdown__link--staff">員工專區</a>
@@ -234,10 +235,10 @@
     </div>
 
     <ul
-            id="menu-menu-principale-1"
-            class="vertical menu por"
-            role="menu"
-            aria-multiselectable="true"
+        id="menu-menu-principale-1"
+        class="vertical menu por"
+        role="menu"
+        aria-multiselectable="true"
     >
       <li>
         <NuxtLink to="/">首頁</NuxtLink>
@@ -350,10 +351,10 @@
               <!-- 下拉面板 -->
               <div class="nav-exp-dropdown">
                 <NuxtLink
-                        v-for="item in experienceItems"
-                        :key="item.to"
-                        :to="item.to"
-                        class="nav-exp-item"
+                    v-for="item in experienceItems"
+                    :key="item.to"
+                    :to="item.to"
+                    class="nav-exp-item"
                 >
                   {{ item.label }}
                 </NuxtLink>
@@ -431,6 +432,15 @@
                 </NuxtLink>
               </li>
               <li>
+                <NuxtLink to="/front/profile/course-attendance" @click="closeAvatar" class="avatar-dropdown__item">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  課程簽到情況
+                </NuxtLink>
+              </li>
+              <li>
                 <NuxtLink to="/front/profile/settings" @click="closeAvatar" class="avatar-dropdown__item">
                   <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -501,339 +511,339 @@
 </template>
 
 <style scoped>
-  /* ════════════════════════════════════════════════════
-     桌機「農莊體驗」下拉
-  ════════════════════════════════════════════════════ */
-  .nav-box--dropdown {
-    position: relative;
-  }
+/* ════════════════════════════════════════════════════
+   桌機「農莊體驗」下拉
+════════════════════════════════════════════════════ */
+.nav-box--dropdown {
+  position: relative;
+}
 
-  /* 整個 nav-box hover 時顯示下拉 */
-  .nav-box--dropdown:hover .nav-exp-dropdown {
-    opacity: 1;
-    visibility: visible;
-    transform: translateX(-50%) translateY(0);
-    pointer-events: auto;
-  }
+/* 整個 nav-box hover 時顯示下拉 */
+.nav-box--dropdown:hover .nav-exp-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
 
-  /* 子項目被選中時，父按鈕底線常駐 */
-  .nav-box--dropdown.is-active .nav-line-bar {
-    width: 100%;
-  }
+/* 子項目被選中時，父按鈕底線常駐 */
+.nav-box--dropdown.is-active .nav-line-bar {
+  width: 100%;
+}
 
-  .nav-exp-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    /* 完全複製全域 .nav-link 的樣式 */
-    line-height: 40px;
-    transform: translateY(5px);
-    font-size: 19px;
-    color: #2a1001;
-    font-weight: 500;
-    font-family: inherit;
-    white-space: nowrap;
-  }
+.nav-exp-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* 完全複製全域 .nav-link 的樣式 */
+  line-height: 40px;
+  transform: translateY(5px);
+  font-size: 19px;
+  color: #2a1001;
+  font-weight: 500;
+  font-family: inherit;
+  white-space: nowrap;
+}
 
-  .nav-exp-caret {
-    transition: transform 0.2s;
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
-  .nav-box--dropdown:hover .nav-exp-caret {
-    transform: rotate(180deg);
-  }
+.nav-exp-caret {
+  transition: transform 0.2s;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.nav-box--dropdown:hover .nav-exp-caret {
+  transform: rotate(180deg);
+}
 
-  /* 下拉面板 */
-  .nav-exp-dropdown {
-    position: absolute;
-    top: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%) translateY(-6px);
-    min-width: 130px;
-    background: #fff;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-    border: 1px solid #f0f0f0;
-    padding: 6px 0;
-    z-index: 1050;
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
-  }
+/* 下拉面板 */
+.nav-exp-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  min-width: 130px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  border: 1px solid #f0f0f0;
+  padding: 6px 0;
+  z-index: 1050;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+}
 
-  /* 讓 hover 區域連接 trigger 與面板，避免滑鼠移動時閃掉 */
-  .nav-exp-dropdown::before {
-    content: '';
-    position: absolute;
-    top: -10px;
-    left: 0;
-    right: 0;
-    height: 12px;
-  }
+/* 讓 hover 區域連接 trigger 與面板，避免滑鼠移動時閃掉 */
+.nav-exp-dropdown::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  height: 12px;
+}
 
-  .nav-exp-item {
-    display: block;
-    padding: 8px 18px;
-    color: #2a1001;
-    font-weight: 500;
-    text-decoration: none;
-    white-space: nowrap;
-    transition: background 0.15s, color 0.15s;
-  }
-  .nav-exp-item:hover,
-  .nav-exp-item.router-link-active {
-    background: #f0fdf9;
-    color: #1a7a52;
-    text-decoration: none;
-  }
-  .nav-exp-item.router-link-active {
-    font-weight: 600;
-  }
+.nav-exp-item {
+  display: block;
+  padding: 8px 18px;
+  color: #2a1001;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-exp-item:hover,
+.nav-exp-item.router-link-active {
+  background: #f0fdf9;
+  color: #1a7a52;
+  text-decoration: none;
+}
+.nav-exp-item.router-link-active {
+  font-weight: 600;
+}
 
-  /* ════════════════════════════════════════════════════
-     手機版「農莊體驗」accordion
-  ════════════════════════════════════════════════════ */
-  .mob-exp-parent {
-    list-style: none;
-    position: relative;
-  }
+/* ════════════════════════════════════════════════════
+   手機版「農莊體驗」accordion
+════════════════════════════════════════════════════ */
+.mob-exp-parent {
+  list-style: none;
+  position: relative;
+}
 
-  /* <a> 不加任何 CSS，讓全域 li>a 自然套用 */
+/* <a> 不加任何 CSS，讓全域 li>a 自然套用 */
 
-  /* 箭頭 button：overlay 在 <a> 同一行，用負 margin 貼著 <a> 的底部往上推 */
-  .mob-exp-arrow-btn {
-    position: absolute;
-    right: 16px;
-    top: 0;
-    /* 與全域 li>a 的高度相同，讓箭頭垂直置中在文字行 */
-    height: var(--mob-nav-item-height, 62px);
-    display: flex;
-    align-items: center;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    color: inherit;
-  }
+/* 箭頭 button：overlay 在 <a> 同一行，用負 margin 貼著 <a> 的底部往上推 */
+.mob-exp-arrow-btn {
+  position: absolute;
+  right: 16px;
+  top: 0;
+  /* 與全域 li>a 的高度相同，讓箭頭垂直置中在文字行 */
+  height: var(--mob-nav-item-height, 62px);
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: inherit;
+}
 
-  .mob-exp-arrow {
-    transition: transform 0.25s;
-    display: block;
-  }
-  .mob-exp-open .mob-exp-arrow {
-    transform: rotate(180deg);
-  }
+.mob-exp-arrow {
+  transition: transform 0.25s;
+  display: block;
+}
+.mob-exp-open .mob-exp-arrow {
+  transform: rotate(180deg);
+}
 
-  /* 子項目 */
-  .mob-exp-sub {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .mob-exp-sub li a {
-    font-size: 0.88em;
-    opacity: 0.88;
-  }
-  .mob-exp-sub li a:hover,
-  .mob-exp-sub li a.router-link-active {
-    opacity: 1;
-    font-weight: 600;
-  }
+/* 子項目 */
+.mob-exp-sub {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.mob-exp-sub li a {
+  font-size: 0.88em;
+  opacity: 0.88;
+}
+.mob-exp-sub li a:hover,
+.mob-exp-sub li a.router-link-active {
+  opacity: 1;
+  font-weight: 600;
+}
 
-  /* slide transition */
-  .mob-exp-slide-enter-active,
-  .mob-exp-slide-leave-active {
-    transition: max-height 0.25s ease, opacity 0.2s ease;
-    overflow: hidden;
-    max-height: 300px;
-  }
-  .mob-exp-slide-enter-from,
-  .mob-exp-slide-leave-to {
-    max-height: 0;
-    opacity: 0;
-  }
+/* slide transition */
+.mob-exp-slide-enter-active,
+.mob-exp-slide-leave-active {
+  transition: max-height 0.25s ease, opacity 0.2s ease;
+  overflow: hidden;
+  max-height: 300px;
+}
+.mob-exp-slide-enter-from,
+.mob-exp-slide-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
 
-  /* ════════════════════════════════════════════════════
-     以下維持原有樣式不變
-  ════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════
+   以下維持原有樣式不變
+════════════════════════════════════════════════════ */
 
-  /* 桌機頭像：絕對定位在 navbar 右側 */
-  .avatar-wrapper {
-    position: absolute;
-    right: 24px;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 1060;
-  }
+/* 桌機頭像：絕對定位在 navbar 右側 */
+.avatar-wrapper {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1060;
+}
 
-  .avatar-btn {
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    border: 2px solid #dee2e6;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: border-color 0.2s, color 0.2s;
-    background: none;
-    padding: 0;
-    line-height: 1;
-    overflow: hidden;
-  }
-  .avatar-btn--guest { background-color: #f8f9fa; color: #6c757d; }
-  .avatar-btn--guest:hover { border-color: #1FC29C; color: #1FC29C; }
-  .avatar-btn--user { background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 14px; border-color: #1FC29C; }
-  .avatar-btn--user:hover { opacity: 0.88; }
-  .avatar-btn__img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+.avatar-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid #dee2e6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  background: none;
+  padding: 0;
+  line-height: 1;
+  overflow: hidden;
+}
+.avatar-btn--guest { background-color: #f8f9fa; color: #6c757d; }
+.avatar-btn--guest:hover { border-color: #1FC29C; color: #1FC29C; }
+.avatar-btn--user { background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 14px; border-color: #1FC29C; }
+.avatar-btn--user:hover { opacity: 0.88; }
+.avatar-btn__img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 
-  .avatar-dropdown {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 10px);
-    width: 305px;
-    background: #fff;
-    border-radius: 14px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.12);
-    border: 1px solid #f0f0f0;
-    overflow: hidden;
-    z-index: 1060;
-  }
-  .avatar-dropdown__header { padding: 16px; border-bottom: 1px solid #f5f5f5; display: flex; align-items: center; gap: 12px; }
-  .avatar-dropdown__header--login { flex-direction: column; align-items: flex-start; }
-  .avatar-dropdown__avatar { width: 38px; height: 38px; border-radius: 50%; background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
-  .avatar-dropdown__img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
-  .avatar-dropdown__name { font-size: 14px; font-weight: 600; color: #333; margin: 0; }
-  .avatar-dropdown__email { font-size: 12px; color: #999; margin: 0; }
-  .avatar-dropdown__hint { font-size: 13px; color: #666; margin: 0 0 10px; }
-  .avatar-dropdown__menu { list-style: none; padding: 6px 0; margin: 0; }
-  .avatar-dropdown__item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 14px; color: #444; text-decoration: none; transition: background 0.15s, color 0.15s; }
-  .avatar-dropdown__item:hover { background-color: #f0fdf9; color: #1FC29C; text-decoration: none; }
-  .avatar-dropdown__divider { border-top: 1px solid #f5f5f5; margin-top: 4px; }
-  .avatar-dropdown__logout { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 16px; font-size: 18px; color: #e74c3c; background: none; border: none; cursor: pointer; transition: background 0.15s; text-align: left; }
-  .avatar-dropdown__logout:hover { background-color: #fff5f5; }
-  .avatar-dropdown__item--btn { width: 100%; background: none; border: none; cursor: pointer; text-align: left; font-family: inherit; }
+.avatar-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: 305px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  border: 1px solid #f0f0f0;
+  overflow: hidden;
+  z-index: 1060;
+}
+.avatar-dropdown__header { padding: 16px; border-bottom: 1px solid #f5f5f5; display: flex; align-items: center; gap: 12px; }
+.avatar-dropdown__header--login { flex-direction: column; align-items: flex-start; }
+.avatar-dropdown__avatar { width: 38px; height: 38px; border-radius: 50%; background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+.avatar-dropdown__img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+.avatar-dropdown__name { font-size: 14px; font-weight: 600; color: #333; margin: 0; }
+.avatar-dropdown__email { font-size: 12px; color: #999; margin: 0; }
+.avatar-dropdown__hint { font-size: 13px; color: #666; margin: 0 0 10px; }
+.avatar-dropdown__menu { list-style: none; padding: 6px 0; margin: 0; }
+.avatar-dropdown__item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 14px; color: #444; text-decoration: none; transition: background 0.15s, color 0.15s; }
+.avatar-dropdown__item:hover { background-color: #f0fdf9; color: #1FC29C; text-decoration: none; }
+.avatar-dropdown__divider { border-top: 1px solid #f5f5f5; margin-top: 4px; }
+.avatar-dropdown__logout { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 16px; font-size: 18px; color: #e74c3c; background: none; border: none; cursor: pointer; transition: background 0.15s; text-align: left; }
+.avatar-dropdown__logout:hover { background-color: #fff5f5; }
+.avatar-dropdown__item--btn { width: 100%; background: none; border: none; cursor: pointer; text-align: left; font-family: inherit; }
 
-  .avatar-drop-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
-  .avatar-drop-leave-active { transition: opacity 0.1s ease, transform 0.1s ease; }
-  .avatar-drop-enter-from { opacity: 0; transform: scale(0.95) translateY(4px); }
-  .avatar-drop-leave-to { opacity: 0; transform: scale(0.95); }
+.avatar-drop-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.avatar-drop-leave-active { transition: opacity 0.1s ease, transform 0.1s ease; }
+.avatar-drop-enter-from { opacity: 0; transform: scale(0.95) translateY(4px); }
+.avatar-drop-leave-to { opacity: 0; transform: scale(0.95); }
 
-  /* 手機版頭像 */
-  .mob-avatar-wrapper { position: fixed; right: 68px; top: 23px; z-index: 3000; }
-  .mob-avatar-btn { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; overflow: hidden; background: rgba(255,255,255,0.2); border: 2px solid rgba(0,0,0,0.12); color: #fff; transition: background 0.2s; }
-  .mob-avatar-btn--user { background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 13px; border-color: #fff; }
-  .mob-avatar-btn--user:hover { opacity: 0.88; }
-  .mob-avatar-btn__img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+/* 手機版頭像 */
+.mob-avatar-wrapper { position: fixed; right: 68px; top: 23px; z-index: 3000; }
+.mob-avatar-btn { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; overflow: hidden; background: rgba(255,255,255,0.2); border: 2px solid rgba(0,0,0,0.12); color: #fff; transition: background 0.2s; }
+.mob-avatar-btn--user { background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 13px; border-color: #fff; }
+.mob-avatar-btn--user:hover { opacity: 0.88; }
+.mob-avatar-btn__img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 
-  .mob-avatar-dropdown { position: fixed; right: 12px; top: 68px; width: min(260px, calc(100vw - 24px)); background: #fff; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.12); border: 1px solid #f0f0f0; overflow: hidden; z-index: 3000; }
-  .mob-avatar-dropdown__info { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #f5f5f5; }
-  .mob-avatar-dropdown__circle { width: 38px; height: 38px; border-radius: 50%; background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
-  .mob-avatar-dropdown__text { min-width: 0; }
-  .mob-avatar-dropdown__name { font-size: 14px; font-weight: 600; color: #333; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mob-avatar-dropdown__email { font-size: 11px; color: #999; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mob-avatar-dropdown__link { display: block; font-size: 14px; color: #444; padding: 9px 16px; text-decoration: none; transition: background 0.15s, color 0.15s; }
-  .mob-avatar-dropdown__link:hover { background-color: #f0fdf9; color: #1FC29C; text-decoration: none; }
-  .mob-avatar-dropdown__logout { display: block; width: 100%; text-align: left; font-size: 14px; color: #e74c3c; background: none; border: none; cursor: pointer; padding: 9px 16px; transition: background 0.15s; }
-  .mob-avatar-dropdown__logout:hover { background-color: #fff5f5; }
-  .mob-avatar-dropdown__login { padding: 14px 16px; }
-  .mob-avatar-dropdown__hint { font-size: 13px; color: #666; margin: 0 0 10px; }
-  .mob-avatar-dropdown__link--btn { width: 100%; background: none; border: none; cursor: pointer; font-family: inherit; }
+.mob-avatar-dropdown { position: fixed; right: 12px; top: 68px; width: min(260px, calc(100vw - 24px)); background: #fff; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.12); border: 1px solid #f0f0f0; overflow: hidden; z-index: 3000; }
+.mob-avatar-dropdown__info { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #f5f5f5; }
+.mob-avatar-dropdown__circle { width: 38px; height: 38px; border-radius: 50%; background-color: #1FC29C; color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+.mob-avatar-dropdown__text { min-width: 0; }
+.mob-avatar-dropdown__name { font-size: 14px; font-weight: 600; color: #333; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mob-avatar-dropdown__email { font-size: 11px; color: #999; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mob-avatar-dropdown__link { display: block; font-size: 14px; color: #444; padding: 9px 16px; text-decoration: none; transition: background 0.15s, color 0.15s; }
+.mob-avatar-dropdown__link:hover { background-color: #f0fdf9; color: #1FC29C; text-decoration: none; }
+.mob-avatar-dropdown__logout { display: block; width: 100%; text-align: left; font-size: 14px; color: #e74c3c; background: none; border: none; cursor: pointer; padding: 9px 16px; transition: background 0.15s; }
+.mob-avatar-dropdown__logout:hover { background-color: #fff5f5; }
+.mob-avatar-dropdown__login { padding: 14px 16px; }
+.mob-avatar-dropdown__hint { font-size: 13px; color: #666; margin: 0 0 10px; }
+.mob-avatar-dropdown__link--btn { width: 100%; background: none; border: none; cursor: pointer; font-family: inherit; }
 
-  .mob-avatar-drop-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
-  .mob-avatar-drop-leave-active { transition: opacity 0.1s ease, transform 0.1s ease; }
-  .mob-avatar-drop-enter-from { opacity: 0; transform: scale(0.95) translateY(4px); }
-  .mob-avatar-drop-leave-to { opacity: 0; transform: scale(0.95); }
+.mob-avatar-drop-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.mob-avatar-drop-leave-active { transition: opacity 0.1s ease, transform 0.1s ease; }
+.mob-avatar-drop-enter-from { opacity: 0; transform: scale(0.95) translateY(4px); }
+.mob-avatar-drop-leave-to { opacity: 0; transform: scale(0.95); }
 
-  /* ════════════════════════════════════════════════════
-     個人 QRCode Modal
-  ════════════════════════════════════════════════════ */
-  .qr-modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 5000;
-    padding: 16px;
-  }
+/* ════════════════════════════════════════════════════
+   個人 QRCode Modal
+════════════════════════════════════════════════════ */
+.qr-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5000;
+  padding: 16px;
+}
 
-  .qr-modal {
-    position: relative;
-    background: #fff;
-    border-radius: 18px;
-    padding: 32px 28px 26px;
-    width: min(320px, 100%);
-    text-align: center;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-  }
+.qr-modal {
+  position: relative;
+  background: #fff;
+  border-radius: 18px;
+  padding: 32px 28px 26px;
+  width: min(320px, 100%);
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
 
-  .qr-modal__close {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    border: none;
-    background: #f5f5f5;
-    color: #666;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-  .qr-modal__close:hover { background: #eee; color: #333; }
+.qr-modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: #f5f5f5;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.qr-modal__close:hover { background: #eee; color: #333; }
 
-  .qr-modal__avatar {
-    width: 60px;
-    height: 60px;
-    margin: 0 auto 10px;
-    border-radius: 50%;
-    background-color: #1FC29C;
-    color: #fff;
-    font-weight: 700;
-    font-size: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-  }
-  .qr-modal__avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.qr-modal__avatar {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  background-color: #1FC29C;
+  color: #fff;
+  font-weight: 700;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.qr-modal__avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-  .qr-modal__name { font-size: 16px; font-weight: 600; color: #333; margin: 0; }
-  .qr-modal__email { font-size: 12px; color: #999; margin: 2px 0 18px; }
+.qr-modal__name { font-size: 16px; font-weight: 600; color: #333; margin: 0; }
+.qr-modal__email { font-size: 12px; color: #999; margin: 2px 0 18px; }
 
-  .qr-modal__code {
-    width: 240px;
-    height: 240px;
-    margin: 0 auto;
-    padding: 10px;
-    border-radius: 12px;
-    border: 1px solid #f0f0f0;
-    background: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .qr-modal__code img { width: 100%; height: 100%; object-fit: contain; }
+.qr-modal__code {
+  width: 240px;
+  height: 240px;
+  margin: 0 auto;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid #f0f0f0;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qr-modal__code img { width: 100%; height: 100%; object-fit: contain; }
 
-  .qr-modal__hint { font-size: 12px; color: #999; margin: 14px 0 0; }
+.qr-modal__hint { font-size: 12px; color: #999; margin: 14px 0 0; }
 
-  .qr-modal-fade-enter-active,
-  .qr-modal-fade-leave-active { transition: opacity 0.18s ease; }
-  .qr-modal-fade-enter-from,
-  .qr-modal-fade-leave-to { opacity: 0; }
-  .qr-modal-fade-enter-active .qr-modal,
-  .qr-modal-fade-leave-active .qr-modal { transition: transform 0.18s ease; }
-  .qr-modal-fade-enter-from .qr-modal,
-  .qr-modal-fade-leave-to .qr-modal { transform: scale(0.95) translateY(6px); }
+.qr-modal-fade-enter-active,
+.qr-modal-fade-leave-active { transition: opacity 0.18s ease; }
+.qr-modal-fade-enter-from,
+.qr-modal-fade-leave-to { opacity: 0; }
+.qr-modal-fade-enter-active .qr-modal,
+.qr-modal-fade-leave-active .qr-modal { transition: transform 0.18s ease; }
+.qr-modal-fade-enter-from .qr-modal,
+.qr-modal-fade-leave-to .qr-modal { transform: scale(0.95) translateY(6px); }
 </style>
