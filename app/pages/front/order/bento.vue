@@ -1,9 +1,9 @@
 <script setup>
 import {ref, reactive, computed, watch} from 'vue'
-import { useCommonStore } from '~/stores/common.js'
-import { useCustomerStore } from '~/stores/customer.js'
+import {useCommonStore} from '~/stores/common.js'
+import {useCustomerStore} from '~/stores/customer.js'
 
-definePageMeta({ layout: 'front' })
+definePageMeta({layout: 'front'})
 
 useSiteHead()
 
@@ -15,7 +15,7 @@ function topFunction() {
 const commonStore = useCommonStore()
 const customerStore = useCustomerStore()
 const LUNCH_BASE = computed(() => commonStore.data.main_url + '/holy/lunch')
-const CUSTOMER_BASE = computed(() => commonStore.data.main_url + '/holy/customer')
+const HOURS_BASE = computed(() => commonStore.data.main_url + '/holy/restaurant/hours')
 
 const router = useRouter()
 
@@ -27,23 +27,19 @@ const lConfirmSuccess = () => {
 }
 
 // ── Google 登入帶入資料 ───────────────────────────────────────────
+// customerStore.customer 本身（來自 /holy/customer/me 或登入回應）就已經含 mobile/landline，
+// 不用再另外打一次「/holy/customer/profile?customerId=」查——那支端點其實不存在。
 watch(() => customerStore.customer, (c) => {
   if (c?.name && !lForm.name) lForm.name = c.name
   if (c?.id && !lForm.phone) {
-    fetch(`${CUSTOMER_BASE.value}/profile?customerId=${c.id}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.mobile && !lForm.phone) lForm.phone = data.mobile
-        else if (data.landline && !lForm.phone) lForm.phone = data.landline
-      })
-      .catch(() => {
-      })
+    if (c.mobile) lForm.phone = c.mobile
+    else if (c.landline) lForm.phone = c.landline
   }
 })
 
 // ── 日期工具 ─────────────────────────────────────────────────────
 const toDateStr = (d) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 // ── 月曆基礎（需在 lForm 之前宣告）────────────────────────────────
 const lCal = new Date();
@@ -51,6 +47,39 @@ lCal.setHours(0, 0, 0, 0)
 const lTodayStr = toDateStr(lCal)
 const lCalYear = ref(lCal.getFullYear())
 const lCalMonth = ref(lCal.getMonth() + 1)
+
+// ── 營業日設定（固定營業星期 / 國定假日公休 / 週六等臨時開放）────────
+// 跟訂位共用同一份餐廳營業規則（RestaurantHoursController），不是便當自己一份；
+// 目前固定營業日為一~五；週六是否開放由店家依訂位/訂購狀況決定（openDates），
+// 未來如客人變多、店家改為一~六營業，後台調整「餐廳設定」即可，前台會自動反映
+const lSettings = reactive({openWeekdays: [1, 2, 3, 4, 5], closedDates: {}, openDates: {}})
+const fetchRestaurantHours = async () => {
+  try {
+    const data = await (await fetch(`${HOURS_BASE.value}/get`)).json()
+    if (Array.isArray(data.openWeekdays)) lSettings.openWeekdays = data.openWeekdays
+    lSettings.closedDates = data.closedDates || {}
+    lSettings.openDates = data.openDates || {}
+  } catch { /* 撈不到設定時，維持預設一~五營業，避免整個日曆無法使用 */
+  }
+}
+// 判斷某日期是否開放線上訂購：公休日 > 額外開放日 > 每週固定營業日
+const lIsBookable = (dateStr) => {
+  if (lSettings.closedDates[dateStr] !== undefined) return false
+  if (lSettings.openDates[dateStr] !== undefined) return true
+  const dow = new Date(dateStr).getDay()
+  return lSettings.openWeekdays.includes(dow)
+}
+// 該日期不可訂購時，顯示原因用的提示文字
+const lDayNote = (dateStr) => {
+  if (lSettings.closedDates[dateStr] !== undefined) {
+    return lSettings.closedDates[dateStr] ? `公休：${lSettings.closedDates[dateStr]}` : '公休'
+  }
+  if (lSettings.openDates[dateStr] !== undefined) {
+    return lSettings.openDates[dateStr] ? `臨時開放：${lSettings.openDates[dateStr]}` : '臨時開放'
+  }
+  if (!lSettings.openWeekdays.includes(new Date(dateStr).getDay())) return '非營業日，如有需要請來電洽詢'
+  return ''
+}
 
 // ── 電話驗證 ─────────────────────────────────────────────────────
 const validateMobile = (c) => /^09\d{8}$/.test(c)
@@ -88,13 +117,13 @@ const lDietOptions = [
   {key: 'spiceVegQty', icon: '🧄', label: '五辛素便當', desc: '可食蔥薑蒜'},
 ]
 const lTotalQty = computed(() =>
-  lForm.meatQty + lForm.fullVegQty + lForm.eggVegQty + lForm.spiceVegQty
+    lForm.meatQty + lForm.fullVegQty + lForm.eggVegQty + lForm.spiceVegQty
 )
 
 // ── 月曆（續）────────────────────────────────────────────────────
 const lCanPrevMonth = computed(() =>
-  lCalYear.value > lCal.getFullYear() ||
-  (lCalYear.value === lCal.getFullYear() && lCalMonth.value > lCal.getMonth() + 1))
+    lCalYear.value > lCal.getFullYear() ||
+    (lCalYear.value === lCal.getFullYear() && lCalMonth.value > lCal.getMonth() + 1))
 const lPrevMonth = () => {
   if (!lCanPrevMonth.value) return
   if (lCalMonth.value === 1) {
@@ -116,12 +145,21 @@ const lCalDays = computed(() => {
   for (let d = 1; d <= daysInMonth; d++) {
     const mm = String(lCalMonth.value).padStart(2, '0'), dd = String(d).padStart(2, '0')
     const str = `${lCalYear.value}-${mm}-${dd}`
-    days.push({label: d, date: str, disabled: str < lTodayStr})
+    const isPast = str < lTodayStr
+    const bookable = lIsBookable(str)
+    days.push({
+      label: d,
+      date: str,
+      disabled: isPast || !bookable,
+      closed: !isPast && !bookable,
+      note: isPast ? '' : lDayNote(str)
+    })
   }
   return days
 })
 const lDayClass = (day) => {
   if (!day.date) return 'lunch-cal__day--empty'
+  if (day.closed) return 'lunch-cal__day--closed'
   if (day.disabled) return 'lunch-cal__day--disabled'
   if (day.date === lForm.date) return 'lunch-cal__day--selected'
   return 'lunch-cal__day--available'
@@ -143,9 +181,15 @@ const lSummary = computed(() => {
 
 const lNextStep = () => {
   Object.keys(lErrors).forEach(k => delete lErrors[k])
-  if (lStep.value === 0 && !lForm.date) {
-    lErrors.date = '請選擇取餐日期';
-    return
+  if (lStep.value === 0) {
+    if (!lForm.date) {
+      lErrors.date = '請選擇取餐日期';
+      return
+    }
+    if (!lIsBookable(lForm.date)) {
+      lErrors.date = lDayNote(lForm.date) || '該日期未開放訂購，請重新選擇';
+      return
+    }
   }
   if (lStep.value === 1) {
     if (!lForm.name.trim()) lErrors.name = '請輸入姓名'
@@ -167,6 +211,12 @@ const lSubmit = async () => {
       body: JSON.stringify({...lForm, status: '待確認', customerId: customerStore.customer?.id ?? ''}),
     })
     if (!res.ok) throw new Error()
+    const data = await res.json()
+    // 後端遇到不可訂購日期等情況會回傳 {"error": "…"}（HTTP 狀態仍是 200），需另外判斷
+    if (data && data.error) {
+      lSubmitError.value = data.error;
+      return
+    }
     Object.assign(lForm, {
       name: '', phone: '', date: '', time: '12:00',
       meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0, note: ''
@@ -181,31 +231,24 @@ const lSubmit = async () => {
 }
 
 onMounted(() => {
-  // 已登入時預先帶入名稱
+  // 已登入時預先帶入名稱／電話（customerStore.customer 已含 mobile/landline，見上方 watch 註解）
   const c = customerStore.customer
   if (c?.name && !lForm.name) lForm.name = c.name
-
-  // 若有設定電話，自動帶入
-  if (c?.id) {
-    fetch(`${CUSTOMER_BASE.value}/profile?customerId=${c.id}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.mobile && !lForm.phone) lForm.phone = data.mobile
-        else if (data.landline && !lForm.phone) lForm.phone = data.landline
-      })
-      .catch(() => {
-      })
+  if (c?.id && !lForm.phone) {
+    if (c.mobile) lForm.phone = c.mobile
+    else if (c.landline) lForm.phone = c.landline
   }
 
   window.onscroll = () => {
     const btn = document.getElementById('myBtn')
     if (btn) {
       btn.style.display =
-        document.body.scrollTop > 20 || document.documentElement.scrollTop > 20
-          ? 'block'
-          : 'none'
+          document.body.scrollTop > 20 || document.documentElement.scrollTop > 20
+              ? 'block'
+              : 'none'
     }
   }
+  fetchRestaurantHours()
 })
 </script>
 
@@ -239,9 +282,9 @@ onMounted(() => {
                 <!-- 步驟列 -->
                 <div class="lunch-steps">
                   <div
-                    v-for="(step, idx) in lSteps" :key="step"
-                    class="lunch-step"
-                    :class="lStep === idx ? 'lunch-step--active' : lStep > idx ? 'lunch-step--done' : 'lunch-step--pending'"
+                      v-for="(step, idx) in lSteps" :key="step"
+                      class="lunch-step"
+                      :class="lStep === idx ? 'lunch-step--active' : lStep > idx ? 'lunch-step--done' : 'lunch-step--pending'"
                   >
                     <span class="lunch-step__inner">
                       <svg v-if="lStep > idx" class="lunch-step__check" fill="none" stroke="currentColor"
@@ -280,14 +323,18 @@ onMounted(() => {
                     </div>
                     <div class="lunch-cal__grid">
                       <div
-                        v-for="(day, idx) in lCalDays" :key="idx"
-                        class="lunch-cal__day"
-                        :class="lDayClass(day)"
-                        @click="day.date && !day.disabled && (lForm.date = day.date)"
+                          v-for="(day, idx) in lCalDays" :key="idx"
+                          class="lunch-cal__day"
+                          :class="lDayClass(day)"
+                          :title="day.note"
+                          @click="day.date && !day.disabled && (lForm.date = day.date)"
                       >{{ day.label }}
                       </div>
                     </div>
                   </div>
+                  <p class="lunch-cal-legend">
+                    <span class="lunch-cal-legend__swatch"/> 公休 / 未開放
+                  </p>
                   <div v-if="lForm.date" class="lunch-selected">
                     已選擇：{{ lForm.date }}
                   </div>
@@ -377,6 +424,8 @@ onMounted(() => {
                 <div class="lunch-notice">
                   <p class="lunch-notice__title">📋 便當預訂須知</p>
                   <p>· 請於前一日下午三點前完成預訂。</p>
+                  <p>· 週六是否開放訂購視當日狀況而定，日曆上未開放的日期請直接來電洽詢。</p>
+                  <p>· 國定假日或臨時店休，日曆會自動標示為不可預訂。</p>
                   <p>· 預訂送出後為「待確認」狀態，我們將盡快電話確認。</p>
                   <p>· 如需取消，請提前來電告知，謝謝。</p>
                 </div>
@@ -627,6 +676,25 @@ onMounted(() => {
   font-size: 13px;
   user-select: none;
   transition: all 0.12s;
+}
+
+/* ── 日曆圖例 ── */
+.lunch-cal-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #999;
+  margin: 0 0 6px 2px;
+}
+
+.lunch-cal-legend__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(135deg, transparent, transparent 2px, #ccb9b9 2px, #ccb9b9 4px);
+  border: 1px solid #d1cdc8;
 }
 
 /* ── 已選日期 ── */
@@ -906,6 +974,13 @@ onMounted(() => {
   color: #d1cdc8;
   cursor: not-allowed;
   background: none;
+}
+
+.lunch-cal__day--closed {
+  color: #ccb9b9;
+  cursor: not-allowed;
+  background: repeating-linear-gradient(135deg, transparent, transparent 4px, #f3e9e9 4px, #f3e9e9 8px);
+  text-decoration: line-through;
 }
 
 .lunch-cal__day--selected {

@@ -15,6 +15,8 @@ function topFunction() {
 const commonStore = useCommonStore()
 const customerStore = useCustomerStore()
 const BOOKING_BASE = computed(() => commonStore.data.main_url + '/holy/booking')
+// 營業時間設定跟便當訂購共用同一份（RestaurantHoursController），不是訂位獨立一份
+const HOURS_BASE = computed(() => commonStore.data.main_url + '/holy/restaurant/hours')
 
 const router = useRouter()
 
@@ -54,7 +56,7 @@ const bCalMonth = ref(bCal.getMonth() + 1)
 const bSettings = reactive({ openWeekdays: [1, 2, 3, 4, 5], closedDates: {}, openDates: {} })
 const fetchBookingSettings = async () => {
   try {
-    const data = await (await fetch(`${BOOKING_BASE.value}/settings/get`)).json()
+    const data = await (await fetch(`${HOURS_BASE.value}/get`)).json()
     if (Array.isArray(data.openWeekdays)) bSettings.openWeekdays = data.openWeekdays
     bSettings.closedDates = data.closedDates || {}
     bSettings.openDates = data.openDates || {}
