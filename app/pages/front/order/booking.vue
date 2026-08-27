@@ -15,7 +15,6 @@ function topFunction() {
 const commonStore = useCommonStore()
 const customerStore = useCustomerStore()
 const BOOKING_BASE = computed(() => commonStore.data.main_url + '/holy/booking')
-const CUSTOMER_BASE = computed(() => commonStore.data.main_url + '/holy/customer')
 
 const router = useRouter()
 
@@ -27,17 +26,15 @@ const bConfirmSuccess = () => {
 }
 
 // ── Google 登入帶入資料 ───────────────────────────────────────────
+// customerStore.customer 本身（來自 /holy/customer/me 或登入回應）就已經含 mobile/landline，
+// 不用再另外打一次「/holy/customer/profile?customerId=」查——那支端點其實不存在
+// （CustomerController 的 /profile 只有 PUT，且是用 cookie 驗身更新自己的資料，不吃 customerId
+// 查詢參數；用 customerId 讓任何人查到別人電話也不安全），之前打下去只會是 405。
 watch(() => customerStore.customer, (c) => {
   if (c?.name && !bForm.name) bForm.name = c.name
   if (c?.id && !bForm.phone) {
-    fetch(`${CUSTOMER_BASE.value}/profile?customerId=${c.id}`)
-        .then(r => r.json())
-        .then((data) => {
-          if (data.mobile && !bForm.phone) bForm.phone = data.mobile
-          else if (data.landline && !bForm.phone) bForm.phone = data.landline
-        })
-        .catch(() => {
-        })
+    if (c.mobile) bForm.phone = c.mobile
+    else if (c.landline) bForm.phone = c.landline
   }
 })
 
@@ -46,8 +43,7 @@ const toDateStr = d =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 // ── 月曆基礎（需在 bForm 之前宣告）────────────────────────────────
-const bCal = new Date();
-bCal.setHours(0, 0, 0, 0)
+const bCal = new Date(); bCal.setHours(0, 0, 0, 0)
 const bTodayStr = toDateStr(bCal)
 const bCalYear = ref(bCal.getFullYear())
 const bCalMonth = ref(bCal.getMonth() + 1)
@@ -55,15 +51,14 @@ const bCalMonth = ref(bCal.getMonth() + 1)
 // ── 營業日設定（固定營業星期 / 國定假日公休 / 週六等臨時開放）────────
 // 目前固定營業日為一~五；週六是否開放由店家依訂位狀況決定（openDates），
 // 未來如客人變多、店家改為一~六營業，後台調整「營業設定」即可，前台會自動反映
-const bSettings = reactive({openWeekdays: [1, 2, 3, 4, 5], closedDates: {}, openDates: {}})
+const bSettings = reactive({ openWeekdays: [1, 2, 3, 4, 5], closedDates: {}, openDates: {} })
 const fetchBookingSettings = async () => {
   try {
     const data = await (await fetch(`${BOOKING_BASE.value}/settings/get`)).json()
     if (Array.isArray(data.openWeekdays)) bSettings.openWeekdays = data.openWeekdays
     bSettings.closedDates = data.closedDates || {}
     bSettings.openDates = data.openDates || {}
-  } catch { /* 撈不到設定時，維持預設一~五營業，避免整個日曆無法使用 */
-  }
+  } catch { /* 撈不到設定時，維持預設一~五營業，避免整個日曆無法使用 */ }
 }
 // 判斷某日期是否開放線上訂位：公休日 > 額外開放日 > 每週固定營業日
 const bIsBookable = (dateStr) => {
@@ -105,19 +100,17 @@ const validateTWPhone = (val) => {
 // ── 步驟 ─────────────────────────────────────────────────────────
 const bStep = ref(0)
 const bSteps = ['選擇日期', '填寫資料', '確認送出']
-const bForm = reactive({
-  name: '', phone: '', date: bTodayStr, time: '12:00', note: '',
-  meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0
-})
+const bForm = reactive({ name: '', phone: '', date: bTodayStr, time: '12:00', note: '',
+  meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0 })
 const bErrors = reactive({})
 const bSubmitting = ref(false)
 const bSubmitError = ref('')
 const bTimeSlots = ['11:00', '11:10', '11:20', '11:30', '11:40', '11:50', '12:00', '12:10', '12:20', '12:30', '12:40', '12:50', '13:00']
 const bDietOptions = [
-  {key: 'meatQty', icon: '🍖', label: '葷食', desc: '含肉類料理'},
-  {key: 'fullVegQty', icon: '🌿', label: '全素', desc: '不含蛋奶五辛'},
-  {key: 'eggVegQty', icon: '🥚', label: '蛋奶素', desc: '可食蛋奶製品'},
-  {key: 'spiceVegQty', icon: '🧄', label: '五辛素', desc: '可食蔥薑蒜'}
+  { key: 'meatQty', icon: '🍖', label: '葷食', desc: '含肉類料理' },
+  { key: 'fullVegQty', icon: '🌿', label: '全素', desc: '不含蛋奶五辛' },
+  { key: 'eggVegQty', icon: '🥚', label: '蛋奶素', desc: '可食蛋奶製品' },
+  { key: 'spiceVegQty', icon: '🧄', label: '五辛素', desc: '可食蔥薑蒜' }
 ]
 const bTotalGuests = computed(() =>
     bForm.meatQty + bForm.fullVegQty + bForm.eggVegQty + bForm.spiceVegQty
@@ -130,22 +123,16 @@ const bCanPrevMonth = computed(() =>
     || (bCalYear.value === bCal.getFullYear() && bCalMonth.value > bCal.getMonth() + 1))
 const bPrevMonth = () => {
   if (!bCanPrevMonth.value) return
-  if (bCalMonth.value === 1) {
-    bCalYear.value--;
-    bCalMonth.value = 12
-  } else bCalMonth.value--
+  if (bCalMonth.value === 1) { bCalYear.value--; bCalMonth.value = 12 } else bCalMonth.value--
 }
 const bNextMonth = () => {
-  if (bCalMonth.value === 12) {
-    bCalYear.value++;
-    bCalMonth.value = 1
-  } else bCalMonth.value++
+  if (bCalMonth.value === 12) { bCalYear.value++; bCalMonth.value = 1 } else bCalMonth.value++
 }
 const bCalDays = computed(() => {
   const firstDay = new Date(bCalYear.value, bCalMonth.value - 1, 1).getDay()
   const daysInMonth = new Date(bCalYear.value, bCalMonth.value, 0).getDate()
   const days = []
-  for (let i = 0; i < firstDay; i++) days.push({label: '', date: null, disabled: true})
+  for (let i = 0; i < firstDay; i++) days.push({ label: '', date: null, disabled: true })
   for (let d = 1; d <= daysInMonth; d++) {
     const mm = String(bCalMonth.value).padStart(2, '0'), dd = String(d).padStart(2, '0')
     const str = `${bCalYear.value}-${mm}-${dd}`
@@ -180,38 +167,28 @@ const bSelectDate = async (date) => {
     const bookings = Array.isArray(data) ? data : []
     bDateGuests.value = bookings.reduce((sum, b) =>
         sum + (b.meatQty || 0) + (b.fullVegQty || 0) + (b.eggVegQty || 0) + (b.spiceVegQty || 0), 0)
-  } catch {
-    bDateGuests.value = 0
-  } finally {
-    bDateGuestsLoading.value = false
-  }
+  } catch { bDateGuests.value = 0 } finally { bDateGuestsLoading.value = false }
 }
 
 const bSummary = computed(() => {
   const rows = [
-    {label: '日期', value: bForm.date},
-    {label: '時間', value: bForm.time}
+    { label: '日期', value: bForm.date },
+    { label: '時間', value: bForm.time }
   ]
-  const dietMap = {meatQty: '葷食', fullVegQty: '全素', eggVegQty: '蛋奶素', spiceVegQty: '五辛素'}
+  const dietMap = { meatQty: '葷食', fullVegQty: '全素', eggVegQty: '蛋奶素', spiceVegQty: '五辛素' }
   for (const [key, label] of Object.entries(dietMap)) {
-    if (bForm[key] > 0) rows.push({label, value: `${bForm[key]} 份`})
+    if (bForm[key] > 0) rows.push({ label, value: `${bForm[key]} 份` })
   }
-  rows.push({label: '合計', value: `${bTotalGuests.value} 人`})
-  if (bForm.note) rows.push({label: '備註', value: bForm.note})
+  rows.push({ label: '合計', value: `${bTotalGuests.value} 人` })
+  if (bForm.note) rows.push({ label: '備註', value: bForm.note })
   return rows
 })
 
 const bNextStep = () => {
   Object.keys(bErrors).forEach(k => delete bErrors[k])
   if (bStep.value === 0) {
-    if (!bForm.date) {
-      bErrors.date = '請選擇用餐日期';
-      return
-    }
-    if (!bIsBookable(bForm.date)) {
-      bErrors.date = bDayNote(bForm.date) || '該日期未開放訂位，請重新選擇';
-      return
-    }
+    if (!bForm.date) { bErrors.date = '請選擇用餐日期'; return }
+    if (!bIsBookable(bForm.date)) { bErrors.date = bDayNote(bForm.date) || '該日期未開放訂位，請重新選擇'; return }
   }
   if (bStep.value === 1) {
     if (!bForm.name.trim()) bErrors.name = '請輸入姓名'
@@ -224,48 +201,32 @@ const bNextStep = () => {
 }
 
 const bSubmit = async () => {
-  bSubmitError.value = '';
-  bSubmitting.value = true
+  bSubmitError.value = ''; bSubmitting.value = true
   try {
     const res = await fetch(`${BOOKING_BASE.value}/save`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({...bForm, status: '待確認', customerId: customerStore.customer?.id ?? ''})
+      body: JSON.stringify({ ...bForm, status: '待確認', customerId: customerStore.customer?.id ?? '' })
     })
     if (!res.ok) throw new Error()
     const text = await res.text()
     // 後端遇到不可訂位日期等情況會回傳「錯誤：…」文字（HTTP 狀態仍是 200），需另外判斷
-    if (text.startsWith('錯誤')) {
-      bSubmitError.value = text;
-      return
-    }
-    Object.assign(bForm, {
-      name: '', phone: '', date: '', time: '12:00', note: '',
-      meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0
-    })
+    if (text.startsWith('錯誤')) { bSubmitError.value = text; return }
+    Object.assign(bForm, { name: '', phone: '', date: '', time: '12:00', note: '',
+      meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0 })
     bStep.value = 0
     bShowSuccessModal.value = true
-  } catch {
-    bSubmitError.value = '預約送出失敗，請稍後再試或直接來電。'
-  } finally {
-    bSubmitting.value = false
-  }
+  } catch { bSubmitError.value = '預約送出失敗，請稍後再試或直接來電。' } finally { bSubmitting.value = false }
 }
 
 onMounted(() => {
   const c = customerStore.customer
   if (c?.name && !bForm.name) bForm.name = c.name
 
-  // 若有設定電話，自動帶入
-  if (c?.id) {
-    fetch(`${CUSTOMER_BASE.value}/profile?customerId=${c.id}`)
-        .then(r => r.json())
-        .then((data) => {
-          if (data.mobile && !bForm.phone) bForm.phone = data.mobile
-          else if (data.landline && !bForm.phone) bForm.phone = data.landline
-        })
-        .catch(() => {
-        })
+  // 若有設定電話，自動帶入（customerStore.customer 已含 mobile/landline，見上方 watch 註解）
+  if (c?.id && !bForm.phone) {
+    if (c.mobile) bForm.phone = c.mobile
+    else if (c.landline) bForm.phone = c.landline
   }
 
   window.onscroll = () => {
@@ -317,15 +278,14 @@ onMounted(() => {
           class="my-1 mx-3 mx-sm-5"
       >
         <NuxtLink to="/front/public">首頁</NuxtLink>
-        >
-        <NuxtLink to="/front/restaurant">田園餐廳</NuxtLink>
+        > <NuxtLink to="/front/restaurant">田園餐廳</NuxtLink>
         > 線上訂位
       </section>
       <section
           id="content"
           class="mx-3 mx-sm-5"
       >
-        <div class="bar-green bar-green-center"/>
+        <div class="bar-green bar-green-center" />
         <div class="row bg-greenweb py-5 px-sm-2">
           <div class="col-12 px-sm-4">
             <div class="row justify-content-center no-gutters">
@@ -387,14 +347,12 @@ onMounted(() => {
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
-                        >
-                          <path
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              stroke-width="2"
-                              d="M15 19l-7-7 7-7"
-                          />
-                        </svg>
+                        ><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M15 19l-7-7 7-7"
+                        /></svg>
                       </button>
                       <span class="booking-cal__month">{{ bCalYear }} 年 {{ bCalMonth }} 月</span>
                       <button
@@ -406,14 +364,12 @@ onMounted(() => {
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
-                        >
-                          <path
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              stroke-width="2"
-                              d="M9 5l7 7-7 7"
-                          />
-                        </svg>
+                        ><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M9 5l7 7-7 7"
+                        /></svg>
                       </button>
                     </div>
                     <div class="booking-cal__weekdays">
@@ -615,17 +571,15 @@ onMounted(() => {
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
-                    >
-                      <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M15 19l-7-7 7-7"
-                      />
-                    </svg>
+                    ><path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M15 19l-7-7 7-7"
+                    /></svg>
                     上一步
                   </button>
-                  <div v-else/>
+                  <div v-else />
                   <button
                       v-if="bStep < bSteps.length - 1"
                       class="booking-btn booking-btn--next"
@@ -637,14 +591,12 @@ onMounted(() => {
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
-                    >
-                      <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M9 5l7 7-7 7"
-                      />
-                    </svg>
+                    ><path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M9 5l7 7-7 7"
+                    /></svg>
                   </button>
                   <button
                       v-else
@@ -675,7 +627,7 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        <div class="bar-green bar-green-center2"/>
+        <div class="bar-green bar-green-center2" />
       </section>
     </div>
 
@@ -688,7 +640,7 @@ onMounted(() => {
     </div>
 
     <div class="container">
-      <div class="bar-waterDrop mt-5 mx-lg-5"/>
+      <div class="bar-waterDrop mt-5 mx-lg-5" />
     </div>
 
     <!-- 訂位成功 Modal -->
@@ -740,7 +692,6 @@ onMounted(() => {
   border-bottom: 1px solid #e5e0d8;
   margin-bottom: 24px;
 }
-
 .booking-step {
   flex: 1;
   padding: 10px 2px;
@@ -749,92 +700,31 @@ onMounted(() => {
   font-weight: 500;
   position: relative;
 }
-
-.booking-step--active {
-  color: #3a9a8a;
-  background-color: #eef7f5;
-}
-
-.booking-step--done {
-  color: #3a9a8a;
-}
-
-.booking-step--pending {
-  color: #ccc;
-}
-
-.booking-step__inner {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.booking-step__check {
-  width: 16px;
-  height: 16px;
-  color: #3a9a8a;
-}
-
+.booking-step--active  { color: #3a9a8a; background-color: #eef7f5; }
+.booking-step--done    { color: #3a9a8a; }
+.booking-step--pending { color: #ccc; }
+.booking-step__inner   { display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+.booking-step__check   { width: 16px; height: 16px; color: #3a9a8a; }
 .booking-step__num {
-  width: 20px;
-  height: 20px;
+  width: 20px; height: 20px;
   border-radius: 50%;
   border: 1.5px solid #ccc;
-  font-size: 11px;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  font-size: 11px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
   color: #ccc;
 }
-
-.booking-step__num--active {
-  background-color: #3a9a8a;
-  border-color: #3a9a8a;
-  color: #fff;
-}
-
+.booking-step__num--active { background-color: #3a9a8a; border-color: #3a9a8a; color: #fff; }
 .booking-step__bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background-color: #5bbfbf;
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: 2px; background-color: #5bbfbf;
 }
 
 /* ── 共用 ── */
-.booking-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #333;
-  margin-bottom: 16px;
-}
-
-.booking-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.booking-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.booking-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #555;
-}
-
-.booking-required {
-  color: #e74c3c;
-}
-
+.booking-title  { font-size: 15px; font-weight: 700; color: #333; margin-bottom: 16px; }
+.booking-form   { display: flex; flex-direction: column; gap: 16px; }
+.booking-field  { display: flex; flex-direction: column; gap: 4px; }
+.booking-label  { font-size: 13px; font-weight: 600; color: #555; }
+.booking-required { color: #e74c3c; }
 .booking-input {
   width: 100%;
   padding: 10px 14px;
@@ -846,26 +736,10 @@ onMounted(() => {
   background: #fff;
   transition: border-color 0.15s;
 }
-
-.booking-input:focus {
-  border-color: #5bbfbf;
-}
-
-.booking-input--error {
-  border-color: #e74c3c;
-  background-color: #fff5f5;
-}
-
-.booking-textarea {
-  resize: none;
-}
-
-.booking-error {
-  font-size: 12px;
-  color: #e74c3c;
-  margin: 2px 0 0;
-}
-
+.booking-input:focus      { border-color: #5bbfbf; }
+.booking-input--error     { border-color: #e74c3c; background-color: #fff5f5; }
+.booking-textarea         { resize: none; }
+.booking-error            { font-size: 12px; color: #e74c3c; margin: 2px 0 0; }
 .booking-grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -873,75 +747,26 @@ onMounted(() => {
 }
 
 /* ── 月曆 ── */
-.booking-cal {
-  background: #f8f7f4;
-  border-radius: 16px;
-  padding: 16px;
-  margin-bottom: 12px;
-}
-
-.booking-cal__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.booking-cal__month {
-  font-size: 13px;
-  font-weight: 700;
-  color: #333;
-}
-
+.booking-cal { background: #f8f7f4; border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+.booking-cal__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.booking-cal__month { font-size: 13px; font-weight: 700; color: #333; }
 .booking-cal__nav {
-  padding: 6px;
-  border-radius: 10px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #666;
-  transition: background 0.15s;
+  padding: 6px; border-radius: 10px;
+  background: none; border: none; cursor: pointer;
+  color: #666; transition: background 0.15s;
 }
-
-.booking-cal__nav:hover:not(:disabled) {
-  background: #e0e0e0;
-}
-
-.booking-cal__nav--disabled {
-  color: #ccc;
-  cursor: not-allowed;
-}
-
-.booking-cal__nav-icon {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-
+.booking-cal__nav:hover:not(:disabled) { background: #e0e0e0; }
+.booking-cal__nav--disabled { color: #ccc; cursor: not-allowed; }
+.booking-cal__nav-icon { width: 16px; height: 16px; display: block; }
 .booking-cal__weekdays {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  display: grid; grid-template-columns: repeat(7, 1fr);
   margin-bottom: 4px;
 }
-
-.booking-cal__weekdays > div {
-  text-align: center;
-  font-size: 11px;
-  color: #aaa;
-  padding: 4px 0;
-}
-
-.booking-cal__grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-}
-
+.booking-cal__weekdays > div { text-align: center; font-size: 11px; color: #aaa; padding: 4px 0; }
+.booking-cal__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .booking-cal__day {
   aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   border-radius: 10px;
   font-size: 13px;
   user-select: none;
@@ -949,26 +774,9 @@ onMounted(() => {
 }
 
 /* ── 日曆圖例 ── */
-.booking-cal-legend {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: #999;
-  margin: 0 0 6px 2px;
-}
-
-.booking-cal-legend__swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-}
-
-.booking-cal-legend__swatch--closed {
-  background: repeating-linear-gradient(135deg, transparent, transparent 2px, #ccb9b9 2px, #ccb9b9 4px);
-  border: 1px solid #d1cdc8;
-}
+.booking-cal-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #999; margin: 0 0 6px 2px; }
+.booking-cal-legend__swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.booking-cal-legend__swatch--closed { background: repeating-linear-gradient(135deg, transparent, transparent 2px, #ccb9b9 2px, #ccb9b9 4px); border: 1px solid #d1cdc8; }
 
 /* ── 已選日期提示 ── */
 .booking-selected {
@@ -983,7 +791,6 @@ onMounted(() => {
   justify-content: space-between;
   margin-bottom: 6px;
 }
-
 .booking-selected__badge {
   font-size: 11px;
   background: #fff;
@@ -994,41 +801,27 @@ onMounted(() => {
 }
 
 /* ── 計數器 ── */
-.booking-counter {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
+.booking-counter { display: flex; align-items: center; gap: 6px; }
 .booking-counter__btn {
-  width: 36px;
-  height: 36px;
+  width: 36px; height: 36px;
   border-radius: 10px;
   border: 1px solid #ddd;
   background: #fff;
   font-size: 16px;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
   transition: background 0.12s;
 }
-
-.booking-counter__btn:hover {
-  background: #f5f5f5;
-}
-
+.booking-counter__btn:hover { background: #f5f5f5; }
 .booking-counter__input {
   flex: 1;
   text-align: center;
   padding: 8px 4px;
   border-radius: 10px;
   border: 1px solid #ddd;
-  font-size: 13px;
-  font-weight: 700;
-  color: #333;
-  outline: none;
+  font-size: 13px; font-weight: 700;
+  color: #333; outline: none;
 }
 
 /* ── 區塊分隔標題 ── */
@@ -1052,7 +845,6 @@ onMounted(() => {
   padding: 14px 16px;
   gap: 12px;
 }
-
 .booking-diet-row__info {
   display: flex;
   align-items: center;
@@ -1060,60 +852,19 @@ onMounted(() => {
   flex: 1;
   min-width: 0;
 }
-
-.booking-diet-row__icon {
-  font-size: 22px;
-  flex-shrink: 0;
-}
-
-.booking-diet-row__label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #333;
-}
-
-.booking-diet-row__desc {
-  font-size: 11px;
-  color: #aaa;
-  margin-top: 2px;
-}
+.booking-diet-row__icon  { font-size: 22px; flex-shrink: 0; }
+.booking-diet-row__label { font-size: 13px; font-weight: 600; color: #333; }
+.booking-diet-row__desc  { font-size: 11px; color: #aaa; margin-top: 2px; }
 
 /* ── 手機版計數列調整 ── */
 @media (max-width: 480px) {
-  .booking-diet-row {
-    padding: 12px 14px;
-    gap: 8px;
-  }
-
-  .booking-diet-row__info {
-    gap: 10px;
-  }
-
-  .booking-diet-row__icon {
-    font-size: 20px;
-  }
-
-  .booking-diet-row__label {
-    white-space: nowrap;
-  }
-
-  .booking-counter {
-    gap: 4px;
-    flex-shrink: 0;
-  }
-
-  .booking-counter__btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-  }
-
-  .booking-counter__input {
-    flex: none;
-    width: 48px;
-    padding: 6px 2px;
-    border-radius: 8px;
-  }
+  .booking-diet-row { padding: 12px 14px; gap: 8px; }
+  .booking-diet-row__info { gap: 10px; }
+  .booking-diet-row__icon { font-size: 20px; }
+  .booking-diet-row__label { white-space: nowrap; }
+  .booking-counter { gap: 4px; flex-shrink: 0; }
+  .booking-counter__btn { width: 32px; height: 32px; border-radius: 8px; }
+  .booking-counter__input { flex: none; width: 48px; padding: 6px 2px; border-radius: 8px; }
 }
 
 /* ── 數量小計 ── */
@@ -1133,32 +884,17 @@ onMounted(() => {
   overflow: hidden;
   margin-bottom: 12px;
 }
-
 .booking-summary__row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: flex; justify-content: space-between; align-items: center;
   padding: 12px 16px;
   border-bottom: 1px solid #f5f5f5;
   font-size: 13px;
 }
-
-.booking-summary__row:last-child {
-  border-bottom: none;
-}
-
-.booking-summary__label {
-  color: #aaa;
-}
-
-.booking-summary__value {
-  font-weight: 600;
-  color: #333;
-}
-
+.booking-summary__row:last-child { border-bottom: none; }
+.booking-summary__label { color: #aaa; }
+.booking-summary__value { font-weight: 600; color: #333; }
 .booking-submit-error {
-  font-size: 13px;
-  color: #e74c3c;
+  font-size: 13px; color: #e74c3c;
   background: #fff5f5;
   border-radius: 12px;
   padding: 12px 16px;
@@ -1175,75 +911,31 @@ onMounted(() => {
   padding-top: 16px;
   border-top: 1px solid #eee;
 }
-
 .booking-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: inline-flex; align-items: center; gap: 6px;
   padding: 10px 20px;
   border-radius: 12px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 13px; font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s;
   border: none;
 }
-
-.booking-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.booking-btn__icon {
-  width: 16px;
-  height: 16px;
-}
-
+.booking-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.booking-btn__icon { width: 16px; height: 16px; }
 .booking-btn__spinner {
-  width: 14px;
-  height: 14px;
+  width: 14px; height: 14px;
   border: 2px solid #fff;
   border-top-color: transparent;
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.booking-btn--back {
-  background: #fff;
-  border: 1px solid #ddd;
-  color: #666;
-  margin-right: auto;
-}
-
-.booking-btn--back:hover {
-  background: #f5f5f5;
-}
-
-.booking-btn--next {
-  background-color: #5bbfbf;
-  color: #fff;
-  margin-left: auto;
-}
-
-.booking-btn--next:hover {
-  opacity: 0.88;
-}
-
-.booking-btn--submit {
-  background-color: #5bbfbf;
-  color: #fff;
-  margin-left: auto;
-}
-
-.booking-btn--submit:hover:not(:disabled) {
-  opacity: 0.88;
-}
+@keyframes spin { to { transform: rotate(360deg); } }
+.booking-btn--back   { background: #fff; border: 1px solid #ddd; color: #666; margin-right: auto; }
+.booking-btn--back:hover { background: #f5f5f5; }
+.booking-btn--next   { background-color: #5bbfbf; color: #fff; margin-left: auto; }
+.booking-btn--next:hover { opacity: 0.88; }
+.booking-btn--submit { background-color: #5bbfbf; color: #fff; margin-left: auto; }
+.booking-btn--submit:hover:not(:disabled) { opacity: 0.88; }
 
 /* ── 注意事項 ── */
 .booking-notice {
@@ -1253,63 +945,21 @@ onMounted(() => {
   font-size: 13px;
   line-height: 1.8;
 }
-
-.booking-notice--teal {
-  background-color: #eef7f5;
-  color: #3a9a8a;
-}
-
-.booking-notice__title {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
+.booking-notice--teal { background-color: #eef7f5; color: #3a9a8a; }
+.booking-notice__title { font-weight: 600; margin-bottom: 4px; }
 
 /* ── 日期狀態 ── */
-.booking-cal__day--empty {
-  cursor: default;
-}
-
-.booking-cal__day--disabled {
-  color: #d1cdc8;
-  cursor: not-allowed;
-  background: none;
-}
-
-.booking-cal__day--closed {
-  color: #ccb9b9;
-  cursor: not-allowed;
-  background: repeating-linear-gradient(135deg, transparent, transparent 4px, #f3e9e9 4px, #f3e9e9 8px);
-  text-decoration: line-through;
-}
-
-.booking-cal__day--selected {
-  background-color: #3a9a8a;
-  color: #fff;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(58, 154, 138, 0.35);
-}
-
-.booking-cal__day--available {
-  color: #444;
-  cursor: pointer;
-}
-
-.booking-cal__day--available:hover {
-  background-color: #d0eeea;
-  color: #2a7a6a;
-}
+.booking-cal__day--empty    { cursor: default; }
+.booking-cal__day--disabled { color: #d1cdc8; cursor: not-allowed; background: none; }
+.booking-cal__day--closed   { color: #ccb9b9; cursor: not-allowed; background: repeating-linear-gradient(135deg, transparent, transparent 4px, #f3e9e9 4px, #f3e9e9 8px); text-decoration: line-through; }
+.booking-cal__day--selected { background-color: #3a9a8a; color: #fff; font-weight: 700; cursor: pointer; box-shadow: 0 2px 6px rgba(58,154,138,0.35); }
+.booking-cal__day--available { color: #444; cursor: pointer; }
+.booking-cal__day--available:hover { background-color: #d0eeea; color: #2a7a6a; }
 
 /* ── number input arrow 隱藏 ── */
 input[type=number]::-webkit-inner-spin-button,
-input[type=number]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-input[type=number] {
-  -moz-appearance: textfield;
-}
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; }
 
 /* ── 成功 Modal ── */
 .bmodal-backdrop {
@@ -1322,7 +972,6 @@ input[type=number] {
   z-index: 9999;
   padding: 20px;
 }
-
 .bmodal {
   background: #fff;
   border-radius: 20px;
@@ -1330,9 +979,8 @@ input[type=number] {
   max-width: 340px;
   width: 100%;
   text-align: center;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
 }
-
 .bmodal__icon {
   width: 56px;
   height: 56px;
@@ -1343,28 +991,24 @@ input[type=number] {
   justify-content: center;
   margin: 0 auto 16px;
 }
-
 .bmodal__icon svg {
   width: 28px;
   height: 28px;
   color: #3a9a8a;
   stroke: #3a9a8a;
 }
-
 .bmodal__title {
   font-size: 17px;
   font-weight: 700;
   color: #333;
   margin: 0 0 10px;
 }
-
 .bmodal__msg {
   font-size: 13px;
   color: #666;
   line-height: 1.7;
   margin: 0 0 24px;
 }
-
 .bmodal__btn {
   display: block;
   width: 100%;
@@ -1379,30 +1023,15 @@ input[type=number] {
   transition: opacity 0.15s;
   text-align: center;
 }
-
-.bmodal__btn:hover {
-  opacity: 0.88;
-}
+.bmodal__btn:hover { opacity: 0.88; }
 
 /* ── Modal 動畫 ── */
 .bmodal-enter-active,
-.bmodal-leave-active {
-  transition: opacity 0.2s ease;
-}
-
+.bmodal-leave-active { transition: opacity 0.2s ease; }
 .bmodal-enter-active .bmodal,
-.bmodal-leave-active .bmodal {
-  transition: transform 0.2s ease, opacity 0.2s ease;
-}
-
+.bmodal-leave-active .bmodal { transition: transform 0.2s ease, opacity 0.2s ease; }
 .bmodal-enter-from,
-.bmodal-leave-to {
-  opacity: 0;
-}
-
+.bmodal-leave-to { opacity: 0; }
 .bmodal-enter-from .bmodal,
-.bmodal-leave-to .bmodal {
-  transform: scale(0.92) translateY(12px);
-  opacity: 0;
-}
+.bmodal-leave-to .bmodal { transform: scale(0.92) translateY(12px); opacity: 0; }
 </style>
