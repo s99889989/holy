@@ -149,7 +149,7 @@
       days.push({
         label: d,
         date: str,
-        disabled: isPast || !bookable,
+        disabled: isPast,
         closed: !isPast && !bookable,
         note: isPast ? '' : lDayNote(str)
       })
@@ -162,6 +162,16 @@
     if (day.disabled) return 'lunch-cal__day--disabled'
     if (day.date === lForm.date) return 'lunch-cal__day--selected'
     return 'lunch-cal__day--available'
+  }
+
+  // 未開放訂購的日期：點了立刻顯示提示，不要等到按下一步才知道，手機沒有滑鼠 hover，不能只靠 title 提示
+  const lSelectDate = (date) => {
+    lForm.date = date
+    if (!lIsBookable(date)) {
+      lErrors.date = lDayNote(date) || '該日期未開放訂購，請重新選擇'
+      return
+    }
+    delete lErrors.date
   }
 
   const lSummary = computed(() => {
@@ -317,7 +327,7 @@
                               class="lunch-cal__day"
                               :class="lDayClass(day)"
                               :title="day.note"
-                              @click="day.date && !day.disabled && (lForm.date = day.date)"
+                              @click="day.date && !day.disabled && lSelectDate(day.date)"
                       >{{ day.label }}
                       </div>
                     </div>

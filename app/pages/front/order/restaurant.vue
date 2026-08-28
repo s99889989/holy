@@ -143,7 +143,7 @@
       days.push({
         label: d,
         date: str,
-        disabled: isPast || !bookable,
+        disabled: isPast,
         closed: !isPast && !bookable,
         note: isPast ? '' : bDayNote(str)
       })
@@ -163,6 +163,13 @@
   const bSelectDate = async (date) => {
     bForm.date = date
     bDateGuests.value = 0
+    // 未開放訂位的日期（公休、非固定營業日…）：點了立刻顯示提示，不要等到按下一步才知道，
+    // 手機沒有滑鼠 hover，不能只靠 title 提示
+    if (!bIsBookable(date)) {
+      bErrors.date = bDayNote(date) || '該日期未開放訂位，請重新選擇'
+      return
+    }
+    delete bErrors.date
     bDateGuestsLoading.value = true
     try {
       const data = await (await fetch(`${BOOKING_BASE.value}/get/${date}`)).json()
