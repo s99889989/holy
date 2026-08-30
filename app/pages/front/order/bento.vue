@@ -1,9 +1,9 @@
 <script setup>
 import {ref, reactive, computed, watch} from 'vue'
-import {useCommonStore} from '~/stores/common.js'
-import {useCustomerStore} from '~/stores/customer.js'
+import { useCommonStore } from '~/stores/common.js'
+import { useCustomerStore } from '~/stores/customer.js'
 
-definePageMeta({layout: 'front'})
+definePageMeta({ layout: 'front' })
 
 useSiteHead()
 
@@ -16,6 +16,8 @@ const commonStore = useCommonStore()
 const customerStore = useCustomerStore()
 const LUNCH_BASE = computed(() => commonStore.data.main_url + '/holy/lunch')
 const HOURS_BASE = computed(() => commonStore.data.main_url + '/holy/restaurant/hours')
+// 便當取餐時間跟訂位到場時間各自獨立一份（BentoTimeSlotController），不再共用
+const TIMESLOT_BASE = computed(() => commonStore.data.main_url + '/holy/lunch/timeslot')
 
 const router = useRouter()
 
@@ -52,16 +54,76 @@ const lCalMonth = ref(lCal.getMonth() + 1)
 // 跟訂位共用同一份餐廳營業規則（RestaurantHoursController），不是便當自己一份；
 // 目前固定營業日為一~五；週六是否開放由店家依訂位/訂購狀況決定（openDates），
 // 未來如客人變多、店家改為一~六營業，後台調整「餐廳設定」即可，前台會自動反映
-const lSettings = reactive({openWeekdays: [1, 2, 3, 4, 5], closedDates: {}, openDates: {}})
+// restaurantName/address/phone/description：餐廳基本資訊，跟訂位共用同一份。
+const lSettings = reactive({
+  openWeekdays: [1, 2, 3, 4, 5], closedDates: {}, openDates: {},
+  restaurantName: '', address: '', phone: '', description: ''
+})
 const fetchRestaurantHours = async () => {
   try {
     const data = await (await fetch(`${HOURS_BASE.value}/get`)).json()
     if (Array.isArray(data.openWeekdays)) lSettings.openWeekdays = data.openWeekdays
     lSettings.closedDates = data.closedDates || {}
     lSettings.openDates = data.openDates || {}
-  } catch { /* 撈不到設定時，維持預設一~五營業，避免整個日曆無法使用 */
-  }
+    lSettings.restaurantName = data.restaurantName || ''
+    lSettings.address = data.address || ''
+    lSettings.phone = data.phone || ''
+    lSettings.description = data.description || ''
+  } catch { /* 撈不到設定時，維持預設一~五營業，避免整個日曆無法使用 */ }
 }
+// 地址組成 Google 地圖搜尋連結，讓不熟悉店家位置的客人可以直接導航
+const lMapUrl = computed(() =>
+    lSettings.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lSettings.address)}` : '')
+// 固定營業星期組成文字，例如 [1,2,3,4,5] → "一~五"；非連續則列出全部
+const WEEKDAY_LABELS_SHORT = ['日', '一', '二', '三', '四', '五', '六']
+const lWeekdaysLabel = computed(() => {
+  const days = [...lSettings.openWeekdays].sort((a, b) => a - b)
+  if (days.length === 0) return '依公告'
+  const isConsecutive = days.every((d, i) => i === 0 || d === days[i - 1] + 1)
+  if (isConsecutive && days.length > 1) return `${WEEKDAY_LABELS_SHORT[days[0]]}~${WEEKDAY_LABELS_SHORT[days[days.length - 1]]}`
+  return days.map(d => WEEKDAY_LABELS_SHORT[d]).join('、')
+})
+
+// ── 取餐時間設定（便當獨立一份，不跟訂位共用）─────────────────────────
+// 直接呼叫後端 /slots：每筆已經是「依該區段 interval 展開好的時間點清單」
+// （slotId/name/color/interval/temporary/startTime/endTime/slots），前端不用自己重算間隔，
+// 保證跟後端 BentoTimeSlotController 的驗證邏輯一致，不會出現前台可選、送出卻被擋的情況。
+// 不帶 date 只會拿到「預設」時段（給還沒選日期時的一般說明用）；選了日期後要帶 date 查詢，
+// 因為當天可能有臨時時段（會取代預設時段），確保客人看到、選到的時間跟後端驗證邏輯一致。
+const lPeriods = ref([])
+const fetchBentoPeriods = async (date) => {
+  try {
+    const url = date ? `${TIMESLOT_BASE.value}/slots?date=${encodeURIComponent(date)}` : `${TIMESLOT_BASE.value}/slots`
+    const data = await (await fetch(url)).json()
+    lPeriods.value = Array.isArray(data) ? data : []
+    // 時段載入後，若目前選的時間已不在任何適用時段內，重設成第一個時段的開始時間
+    if (!lTimeSlots.value.includes(lForm.time)) lForm.time = lTimeSlots.value[0] || lForm.time
+  } catch { /* 撈不到時段時，時間按鈕會是空的，畫面會提示請致電門市 */ }
+}
+
+// ── 準備時間（便當專屬）───────────────────────────────────────────
+// 客人「今天」下單時，只能選現在時間＋準備時間之後的取餐時段；後端 /slots?date= 已經把
+// 來不及準備的時間點濾掉了（保證不會出現前台可選、送出卻被擋），這裡另外抓 prepMinutes
+// 只是為了顯示說明文字，讓客人知道「為什麼有些時間不能選」。
+const lPrepMinutes = ref(0)
+const fetchPrepMinutes = async () => {
+  try {
+    const data = await (await fetch(`${TIMESLOT_BASE.value}/prep-time`)).json()
+    lPrepMinutes.value = data.prepMinutes || 0
+  } catch { /* 抓不到就不顯示說明文字，不影響實際下單限制（後端仍會擋） */ }
+}
+// 只有選的日期是「今天」且有設定準備時間時才顯示；换算成「現在最早可選幾點」給客人看
+const lPrepNote = computed(() => {
+  if (!lPrepMinutes.value || lForm.date !== lTodayStr) return ''
+  const now = new Date()
+  now.setMinutes(now.getMinutes() + lPrepMinutes.value)
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mm = String(now.getMinutes()).padStart(2, '0')
+  return `因應備餐時間，今日最早可選 ${hh}:${mm} 之後的取餐時段`
+})
+// 給餐廳資訊卡用的時段摘要文字，例如「午餐 11:00–14:00」；多個時段用頓號連接
+const lPeriodsLabel = computed(() =>
+    lPeriods.value.length > 0 ? lPeriods.value.map(p => `${p.name} ${p.startTime}–${p.endTime}`).join('、') : '時段依公告')
 // 判斷某日期是否開放線上訂購：公休日 > 額外開放日 > 每週固定營業日
 const lIsBookable = (dateStr) => {
   if (lSettings.closedDates[dateStr] !== undefined) return false
@@ -69,15 +131,15 @@ const lIsBookable = (dateStr) => {
   const dow = new Date(dateStr).getDay()
   return lSettings.openWeekdays.includes(dow)
 }
-// 該日期不可訂購時，顯示原因用的提示文字
+// 該日期不可訂購時，顯示原因用的提示文字：店家有填備註就顯示備註，沒填就顯示制式的休息訊息
 const lDayNote = (dateStr) => {
   if (lSettings.closedDates[dateStr] !== undefined) {
-    return lSettings.closedDates[dateStr] ? `公休：${lSettings.closedDates[dateStr]}` : '公休'
+    return lSettings.closedDates[dateStr] || '餐廳今日公休，如有需要請來電洽詢'
   }
   if (lSettings.openDates[dateStr] !== undefined) {
-    return lSettings.openDates[dateStr] ? `臨時開放：${lSettings.openDates[dateStr]}` : '臨時開放'
+    return lSettings.openDates[dateStr] || '本日臨時開放訂購'
   }
-  if (!lSettings.openWeekdays.includes(new Date(dateStr).getDay())) return '非營業日，如有需要請來電洽詢'
+  if (!lSettings.openWeekdays.includes(new Date(dateStr).getDay())) return '餐廳今日公休，如有需要請來電洽詢'
   return ''
 }
 
@@ -109,7 +171,14 @@ const lForm = reactive({
 const lErrors = reactive({})
 const lSubmitting = ref(false)
 const lSubmitError = ref('')
-const lTimeSlots = ['10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00']
+// 取餐時段按鈕：直接使用後端 /slots 依各區段 interval 展開好的時間點分組（見上方
+// fetchBentoPeriods），前端不再自己算間隔或跑迴圈——每個區段各自的間隔（分鐘）由後台
+// 「取餐時間設定」的 interval 欄位決定，不再是寫死的固定分鐘數。
+const lTimeSlotGroups = computed(() => lPeriods.value
+    .map(p => ({ label: p.name, times: p.slots }))
+    .filter(g => g.times.length > 0))
+// 所有可選時間攤平成一個清單，給表單驗證用
+const lTimeSlots = computed(() => lTimeSlotGroups.value.flatMap(g => g.times))
 const lDietOptions = [
   {key: 'meatQty', icon: '🍖', label: '葷食便當', desc: '含肉類料理'},
   {key: 'fullVegQty', icon: '🌿', label: '全素便當', desc: '不含蛋奶五辛'},
@@ -150,7 +219,7 @@ const lCalDays = computed(() => {
     days.push({
       label: d,
       date: str,
-      disabled: isPast || !bookable,
+      disabled: isPast,
       closed: !isPast && !bookable,
       note: isPast ? '' : lDayNote(str)
     })
@@ -163,6 +232,19 @@ const lDayClass = (day) => {
   if (day.disabled) return 'lunch-cal__day--disabled'
   if (day.date === lForm.date) return 'lunch-cal__day--selected'
   return 'lunch-cal__day--available'
+}
+
+// 未開放訂購的日期：點了立刻顯示提示，不要等到按下一步才知道，手機沒有滑鼠 hover，不能只靠 title 提示
+const lSelectDate = (date) => {
+  lForm.date = date
+  // 換日期要重新查當天的取餐時間——當天可能有臨時時段（取代預設時段），
+  // 不重新查的話畫面顯示的時間跟後端驗證邏輯會對不上。
+  fetchBentoPeriods(date)
+  if (!lIsBookable(date)) {
+    lErrors.date = lDayNote(date) || '該日期未開放訂購，請重新選擇'
+    return
+  }
+  delete lErrors.date
 }
 
 const lSummary = computed(() => {
@@ -182,19 +264,15 @@ const lSummary = computed(() => {
 const lNextStep = () => {
   Object.keys(lErrors).forEach(k => delete lErrors[k])
   if (lStep.value === 0) {
-    if (!lForm.date) {
-      lErrors.date = '請選擇取餐日期';
-      return
-    }
-    if (!lIsBookable(lForm.date)) {
-      lErrors.date = lDayNote(lForm.date) || '該日期未開放訂購，請重新選擇';
-      return
-    }
+    if (!lForm.date) { lErrors.date = '請選擇取餐日期'; return }
+    if (!lIsBookable(lForm.date)) { lErrors.date = lDayNote(lForm.date) || '該日期未開放訂購，請重新選擇'; return }
   }
   if (lStep.value === 1) {
     if (!lForm.name.trim()) lErrors.name = '請輸入姓名'
     if (!lForm.phone.trim()) lErrors.phone = '請輸入聯絡電話'
     else if (!validateTWPhone(lForm.phone)) lErrors.phone = '請輸入正確的手機（09xxxxxxxx）或市話（如 02-12345678、07-1234567）'
+    // 時段選單本身就是依營業時段動態產生，理論上不會選到範圍外，這裡是保險
+    if (!lTimeSlots.value.includes(lForm.time)) lErrors.time = `請選擇營業時段內的取餐時間（${lPeriodsLabel.value}）`
     if (lForm.meatQty === 0 && lForm.fullVegQty === 0 && lForm.eggVegQty === 0 && lForm.spiceVegQty === 0) lErrors.qty = '請至少預訂一盒便當'
     if (Object.keys(lErrors).length > 0) return
   }
@@ -213,10 +291,7 @@ const lSubmit = async () => {
     if (!res.ok) throw new Error()
     const data = await res.json()
     // 後端遇到不可訂購日期等情況會回傳 {"error": "…"}（HTTP 狀態仍是 200），需另外判斷
-    if (data && data.error) {
-      lSubmitError.value = data.error;
-      return
-    }
+    if (data && data.error) { lSubmitError.value = data.error; return }
     Object.assign(lForm, {
       name: '', phone: '', date: '', time: '12:00',
       meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0, note: ''
@@ -249,6 +324,8 @@ onMounted(() => {
     }
   }
   fetchRestaurantHours()
+  fetchBentoPeriods(lForm.date)
+  fetchPrepMinutes()
 })
 </script>
 
@@ -272,6 +349,35 @@ onMounted(() => {
         <NuxtLink to="/front/restaurant">田園餐廳</NuxtLink>
         > 便當預訂
       </section>
+
+      <!-- ── 餐廳資訊：給不熟悉店家位置的客人參考 ── -->
+      <section
+          v-if="lSettings.restaurantName || lSettings.address || lSettings.phone"
+          class="mx-3 mx-sm-5 mb-3"
+      >
+        <div class="lunch-info-card">
+          <p v-if="lSettings.restaurantName" class="lunch-info-card__name">{{ lSettings.restaurantName }}</p>
+          <p v-if="lSettings.description" class="lunch-info-card__desc">{{ lSettings.description }}</p>
+          <div class="lunch-info-card__rows">
+            <a
+                v-if="lSettings.address"
+                :href="lMapUrl"
+                target="_blank"
+                rel="noopener"
+                class="lunch-info-card__row"
+            >
+              📍 {{ lSettings.address }}
+            </a>
+            <a v-if="lSettings.phone" :href="`tel:${lSettings.phone}`" class="lunch-info-card__row">
+              📞 {{ lSettings.phone }}
+            </a>
+            <span class="lunch-info-card__row lunch-info-card__row--static">
+              🕐 固定營業 {{ lWeekdaysLabel }}．{{ lPeriodsLabel }}（六日依公告，詳見日曆）
+            </span>
+          </div>
+        </div>
+      </section>
+
       <section id="content" class="mx-3 mx-sm-5">
         <div class="bar-green bar-green-center"></div>
         <div class="row bg-greenweb py-5 px-sm-2">
@@ -327,7 +433,7 @@ onMounted(() => {
                           class="lunch-cal__day"
                           :class="lDayClass(day)"
                           :title="day.note"
-                          @click="day.date && !day.disabled && (lForm.date = day.date)"
+                          @click="day.date && !day.disabled && lSelectDate(day.date)"
                       >{{ day.label }}
                       </div>
                     </div>
@@ -358,9 +464,24 @@ onMounted(() => {
                   </div>
                   <div class="lunch-field">
                     <label class="lunch-label">取餐時間</label>
-                    <select v-model="lForm.time" class="lunch-input">
-                      <option v-for="t in lTimeSlots" :key="t" :value="t">{{ t }}</option>
-                    </select>
+                    <div v-for="group in lTimeSlotGroups" :key="group.label" class="lunch-time-group">
+                      <p class="lunch-time-group__label">{{ group.label }}</p>
+                      <div class="lunch-time-slots">
+                        <button
+                            v-for="t in group.times"
+                            :key="t"
+                            type="button"
+                            class="lunch-time-slot"
+                            :class="lForm.time === t && 'lunch-time-slot--selected'"
+                            @click="lForm.time = t"
+                        >
+                          {{ t }}
+                        </button>
+                      </div>
+                    </div>
+                    <p class="text-xs text-hint-c mt-1">營業時段 {{ lPeriodsLabel }}</p>
+                    <p v-if="lPrepNote" class="text-xs text-orange-600 mt-1">⏱️ {{ lPrepNote }}</p>
+                    <p v-if="lErrors.time" class="lunch-error">{{ lErrors.time }}</p>
                   </div>
                   <div v-for="opt in lDietOptions" :key="opt.key" class="lunch-diet-row">
                     <div class="lunch-diet-row__info">
@@ -602,6 +723,44 @@ onMounted(() => {
   margin: 2px 0 0;
 }
 
+/* ── 餐廳資訊卡 ── */
+.lunch-info-card       { background: #f8f7f4; border-radius: 16px; padding: 16px 18px; }
+.lunch-info-card__name { font-size: 16px; font-weight: 700; color: #333; margin: 0 0 4px; }
+.lunch-info-card__desc { font-size: 13px; color: #777; margin: 0 0 10px; }
+.lunch-info-card__rows { display: flex; flex-direction: column; gap: 6px; }
+.lunch-info-card__row {
+  font-size: 13px;
+  color: #f59e0b;
+  text-decoration: none;
+  width: fit-content;
+}
+.lunch-info-card__row:hover      { text-decoration: underline; }
+.lunch-info-card__row--static    { color: #777; cursor: default; }
+.lunch-info-card__row--static:hover { text-decoration: none; }
+
+/* ── 取餐時段按鈕 ── */
+.lunch-time-group        { margin-bottom: 8px; }
+.lunch-time-group__label { font-size: 12px; font-weight: 700; color: #999; margin: 0 0 6px; }
+.lunch-time-slots        { display: flex; flex-wrap: wrap; gap: 8px; }
+.lunch-time-slot {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #e5e0d8;
+  background: #fff;
+  color: #444;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.lunch-time-slot:hover     { background-color: #fef3e2; color: #c2760a; }
+.lunch-time-slot--selected {
+  background-color: #f59e0b;
+  border-color: #f59e0b;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(245,158,11,0.35);
+}
+
 /* ── 月曆 ── */
 .lunch-cal {
   background: #f8f7f4;
@@ -679,20 +838,9 @@ onMounted(() => {
 }
 
 /* ── 日曆圖例 ── */
-.lunch-cal-legend {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: #999;
-  margin: 0 0 6px 2px;
-}
-
+.lunch-cal-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #999; margin: 0 0 6px 2px; }
 .lunch-cal-legend__swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+  display: inline-block; width: 10px; height: 10px; border-radius: 3px;
   background: repeating-linear-gradient(135deg, transparent, transparent 2px, #ccb9b9 2px, #ccb9b9 4px);
   border: 1px solid #d1cdc8;
 }

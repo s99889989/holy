@@ -15,8 +15,10 @@ function topFunction() {
 const commonStore = useCommonStore()
 const customerStore = useCustomerStore()
 const BOOKING_BASE = computed(() => commonStore.data.main_url + '/holy/booking')
-// 營業時間設定跟便當訂購共用同一份（RestaurantHoursController），不是訂位獨立一份
+// 營業日設定跟便當訂購共用同一份（RestaurantHoursController），不是訂位獨立一份
 const HOURS_BASE = computed(() => commonStore.data.main_url + '/holy/restaurant/hours')
+// 訂位到場時間跟便當取餐時間各自獨立一份（BookingTimeSlotController），不再共用
+const TIMESLOT_BASE = computed(() => commonStore.data.main_url + '/holy/booking/timeslot')
 
 const router = useRouter()
 
@@ -53,15 +55,55 @@ const bCalMonth = ref(bCal.getMonth() + 1)
 // ── 營業日設定（固定營業星期 / 國定假日公休 / 週六等臨時開放）────────
 // 目前固定營業日為一~五；週六是否開放由店家依訂位狀況決定（openDates），
 // 未來如客人變多、店家改為一~六營業，後台調整「營業設定」即可，前台會自動反映
-const bSettings = reactive({ openWeekdays: [1, 2, 3, 4, 5], closedDates: {}, openDates: {} })
+// restaurantName/address/phone/description：餐廳基本資訊，訂位、便當共用同一份。
+const bSettings = reactive({
+  openWeekdays: [1, 2, 3, 4, 5], closedDates: {}, openDates: {},
+  restaurantName: '', address: '', phone: '', description: ''
+})
 const fetchBookingSettings = async () => {
   try {
     const data = await (await fetch(`${HOURS_BASE.value}/get`)).json()
     if (Array.isArray(data.openWeekdays)) bSettings.openWeekdays = data.openWeekdays
     bSettings.closedDates = data.closedDates || {}
     bSettings.openDates = data.openDates || {}
+    bSettings.restaurantName = data.restaurantName || ''
+    bSettings.address = data.address || ''
+    bSettings.phone = data.phone || ''
+    bSettings.description = data.description || ''
   } catch { /* 撈不到設定時，維持預設一~五營業，避免整個日曆無法使用 */ }
 }
+// 地址組成 Google 地圖搜尋連結，跟參考的訂位網站一樣，讓不熟悉店家位置的客人可以直接導航
+const bMapUrl = computed(() =>
+    bSettings.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(bSettings.address)}` : '')
+// 固定營業星期組成文字，例如 [1,2,3,4,5] → "一~五"；非連續則列出全部（例：一、三、五）
+const WEEKDAY_LABELS_SHORT = ['日', '一', '二', '三', '四', '五', '六']
+const bWeekdaysLabel = computed(() => {
+  const days = [...bSettings.openWeekdays].sort((a, b) => a - b)
+  if (days.length === 0) return '依公告'
+  const isConsecutive = days.every((d, i) => i === 0 || d === days[i - 1] + 1)
+  if (isConsecutive && days.length > 1) return `${WEEKDAY_LABELS_SHORT[days[0]]}~${WEEKDAY_LABELS_SHORT[days[days.length - 1]]}`
+  return days.map(d => WEEKDAY_LABELS_SHORT[d]).join('、')
+})
+
+// ── 到場時間設定（訂位獨立一份，不跟便當共用）─────────────────────────
+// 直接呼叫後端 /slots：每筆已經是「依該區段 interval 展開好的時間點清單」
+// （slotId/name/color/interval/temporary/startTime/endTime/slots），前端不用自己重算間隔，
+// 保證跟後端 BookingTimeSlotController 的驗證邏輯一致，不會出現前台可選、送出卻被擋的情況。
+// 不帶 date 只會拿到「預設」時段（給還沒選日期時的一般說明用）；選了日期後要帶 date 查詢，
+// 因為當天可能有臨時時段（會取代預設時段），確保客人看到、選到的時間跟後端驗證邏輯一致。
+const bPeriods = ref([])
+const fetchBookingPeriods = async (date) => {
+  try {
+    const url = date ? `${TIMESLOT_BASE.value}/slots?date=${encodeURIComponent(date)}` : `${TIMESLOT_BASE.value}/slots`
+    const data = await (await fetch(url)).json()
+    bPeriods.value = Array.isArray(data) ? data : []
+    // 時段載入後，若目前選的時間已不在任何適用時段內，重設成第一個時段的開始時間
+    if (!bTimeSlots.value.includes(bForm.time)) bForm.time = bTimeSlots.value[0] || bForm.time
+  } catch { /* 撈不到時段時，時間按鈕會是空的，畫面會提示請致電門市 */ }
+}
+// 給餐廳資訊卡用的時段摘要文字，例如「午餐 11:00–14:00」；多個時段用頓號連接
+const bPeriodsLabel = computed(() =>
+    bPeriods.value.length > 0 ? bPeriods.value.map(p => `${p.name} ${p.startTime}–${p.endTime}`).join('、') : '時段依公告')
 // 判斷某日期是否開放線上訂位：公休日 > 額外開放日 > 每週固定營業日
 const bIsBookable = (dateStr) => {
   if (bSettings.closedDates[dateStr] !== undefined) return false
@@ -69,15 +111,15 @@ const bIsBookable = (dateStr) => {
   const dow = new Date(dateStr).getDay()
   return bSettings.openWeekdays.includes(dow)
 }
-// 該日期不可訂位時，顯示原因用的提示文字
+// 該日期不可訂位時，顯示原因用的提示文字：店家有填備註就顯示備註，沒填就顯示制式的休息訊息
 const bDayNote = (dateStr) => {
   if (bSettings.closedDates[dateStr] !== undefined) {
-    return bSettings.closedDates[dateStr] ? `公休：${bSettings.closedDates[dateStr]}` : '公休'
+    return bSettings.closedDates[dateStr] || '餐廳今日公休，如有需要請來電洽詢'
   }
   if (bSettings.openDates[dateStr] !== undefined) {
-    return bSettings.openDates[dateStr] ? `臨時開放：${bSettings.openDates[dateStr]}` : '臨時開放'
+    return bSettings.openDates[dateStr] || '本日臨時開放訂位'
   }
-  if (!bSettings.openWeekdays.includes(new Date(dateStr).getDay())) return '非營業日，如有需要請來電洽詢'
+  if (!bSettings.openWeekdays.includes(new Date(dateStr).getDay())) return '餐廳今日公休，如有需要請來電洽詢'
   return ''
 }
 
@@ -107,7 +149,15 @@ const bForm = reactive({ name: '', phone: '', date: bTodayStr, time: '12:00', no
 const bErrors = reactive({})
 const bSubmitting = ref(false)
 const bSubmitError = ref('')
-const bTimeSlots = ['11:00', '11:10', '11:20', '11:30', '11:40', '11:50', '12:00', '12:10', '12:20', '12:30', '12:40', '12:50', '13:00']
+// 用餐時段按鈕：直接使用後端 /slots 依各區段 interval 展開好的時間點分組（見上方
+// fetchBookingPeriods），前端不再自己算間隔或跑迴圈——每個區段各自的間隔（分鐘）由後台
+// 「到場時間設定」的 interval 欄位決定，不再是寫死的固定分鐘數。
+// 參考常見訂位網站的呈現方式（例：inline 訂位頁），用可點擊的時間按鈕取代下拉選單，手機上更好點。
+const bTimeSlotGroups = computed(() => bPeriods.value
+    .map(p => ({ label: p.name, times: p.slots }))
+    .filter(g => g.times.length > 0))
+// 所有可選時間攤平成一個清單，給表單驗證用（v-model 選到的時間必須在這裡面）
+const bTimeSlots = computed(() => bTimeSlotGroups.value.flatMap(g => g.times))
 const bDietOptions = [
   { key: 'meatQty', icon: '🍖', label: '葷食', desc: '含肉類料理' },
   { key: 'fullVegQty', icon: '🌿', label: '全素', desc: '不含蛋奶五辛' },
@@ -143,7 +193,7 @@ const bCalDays = computed(() => {
     days.push({
       label: d,
       date: str,
-      disabled: isPast || !bookable,
+      disabled: isPast,
       closed: !isPast && !bookable,
       note: isPast ? '' : bDayNote(str)
     })
@@ -163,6 +213,16 @@ const bDateGuestsLoading = ref(false)
 const bSelectDate = async (date) => {
   bForm.date = date
   bDateGuests.value = 0
+  // 換日期要重新查當天的到場時間——當天可能有臨時時段（取代預設時段），
+  // 不重新查的話畫面顯示的時間跟後端驗證邏輯會對不上。
+  fetchBookingPeriods(date)
+  // 未開放訂位的日期（公休、非固定營業日…）：點了立刻顯示提示，不要等到按下一步才知道，
+  // 手機沒有滑鼠 hover，不能只靠 title 提示
+  if (!bIsBookable(date)) {
+    bErrors.date = bDayNote(date) || '該日期未開放訂位，請重新選擇'
+    return
+  }
+  delete bErrors.date
   bDateGuestsLoading.value = true
   try {
     const data = await (await fetch(`${BOOKING_BASE.value}/get/${date}`)).json()
@@ -196,6 +256,8 @@ const bNextStep = () => {
     if (!bForm.name.trim()) bErrors.name = '請輸入姓名'
     if (!bForm.phone.trim()) bErrors.phone = '請輸入聯絡電話'
     else if (!validateTWPhone(bForm.phone)) bErrors.phone = '請輸入正確的手機（09xxxxxxxx）或市話（如 02-12345678、07-1234567）'
+    // 時段選單本身就是依營業時段動態產生，理論上不會選到範圍外，這裡是保險（例如設定剛好在選擇當下被店家改掉）
+    if (!bTimeSlots.value.includes(bForm.time)) bErrors.time = `請選擇營業時段內的用餐時間（${bPeriodsLabel.value}）`
     if (bTotalGuests.value === 0) bErrors.diet = '請至少選擇一份餐點'
     if (Object.keys(bErrors).length > 0) return
   }
@@ -241,6 +303,8 @@ onMounted(() => {
     }
   }
   fetchBookingSettings()
+  // bSelectDate 內部會帶著今天的日期呼叫 fetchBookingPeriods，不用在這裡再多呼叫一次
+  // （不然兩個請求前後順序不保證，可能讓沒帶 date 的舊結果蓋掉正確的當天結果）
   bSelectDate(bTodayStr)
 })
 </script>
@@ -283,6 +347,49 @@ onMounted(() => {
         > <NuxtLink to="/front/restaurant">田園餐廳</NuxtLink>
         > 線上訂位
       </section>
+
+      <!-- ── 餐廳資訊：給不熟悉店家位置的客人參考 ── -->
+      <section
+          v-if="bSettings.restaurantName || bSettings.address || bSettings.phone"
+          class="mx-3 mx-sm-5 mb-3"
+      >
+        <div class="booking-info-card">
+          <p
+              v-if="bSettings.restaurantName"
+              class="booking-info-card__name"
+          >
+            {{ bSettings.restaurantName }}
+          </p>
+          <p
+              v-if="bSettings.description"
+              class="booking-info-card__desc"
+          >
+            {{ bSettings.description }}
+          </p>
+          <div class="booking-info-card__rows">
+            <a
+                v-if="bSettings.address"
+                :href="bMapUrl"
+                target="_blank"
+                rel="noopener"
+                class="booking-info-card__row"
+            >
+              📍 {{ bSettings.address }}
+            </a>
+            <a
+                v-if="bSettings.phone"
+                :href="`tel:${bSettings.phone}`"
+                class="booking-info-card__row"
+            >
+              📞 {{ bSettings.phone }}
+            </a>
+            <span class="booking-info-card__row booking-info-card__row--static">
+              🕐 固定營業 {{ bWeekdaysLabel }}．{{ bPeriodsLabel }}（六日依公告，詳見日曆）
+            </span>
+          </div>
+        </div>
+      </section>
+
       <section
           id="content"
           class="mx-3 mx-sm-5"
@@ -461,18 +568,34 @@ onMounted(() => {
                   </div>
                   <div class="booking-field">
                     <label class="booking-label">用餐時間</label>
-                    <select
-                        v-model="bForm.time"
-                        class="booking-input"
+                    <div
+                        v-for="group in bTimeSlotGroups"
+                        :key="group.label"
+                        class="booking-time-group"
                     >
-                      <option
-                          v-for="t in bTimeSlots"
-                          :key="t"
-                          :value="t"
-                      >
-                        {{ t }}
-                      </option>
-                    </select>
+                      <p class="booking-time-group__label">{{ group.label }}</p>
+                      <div class="booking-time-slots">
+                        <button
+                            v-for="t in group.times"
+                            :key="t"
+                            type="button"
+                            class="booking-time-slot"
+                            :class="bForm.time === t && 'booking-time-slot--selected'"
+                            @click="bForm.time = t"
+                        >
+                          {{ t }}
+                        </button>
+                      </div>
+                    </div>
+                    <p class="text-xs text-hint-c mt-1">
+                      營業時段 {{ bPeriodsLabel }}
+                    </p>
+                    <p
+                        v-if="bErrors.time"
+                        class="booking-error"
+                    >
+                      {{ bErrors.time }}
+                    </p>
                   </div>
                   <div class="booking-field">
                     <label class="booking-label">備註</label>
@@ -746,6 +869,44 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+/* ── 餐廳資訊卡 ── */
+.booking-info-card         { background: #f8f7f4; border-radius: 16px; padding: 16px 18px; }
+.booking-info-card__name   { font-size: 16px; font-weight: 700; color: #333; margin: 0 0 4px; }
+.booking-info-card__desc   { font-size: 13px; color: #777; margin: 0 0 10px; }
+.booking-info-card__rows   { display: flex; flex-direction: column; gap: 6px; }
+.booking-info-card__row {
+  font-size: 13px;
+  color: #3a9a8a;
+  text-decoration: none;
+  width: fit-content;
+}
+.booking-info-card__row:hover      { text-decoration: underline; }
+.booking-info-card__row--static    { color: #777; cursor: default; }
+.booking-info-card__row--static:hover { text-decoration: none; }
+
+/* ── 用餐時段按鈕 ── */
+.booking-time-group        { margin-bottom: 8px; }
+.booking-time-group__label { font-size: 12px; font-weight: 700; color: #999; margin: 0 0 6px; }
+.booking-time-slots        { display: flex; flex-wrap: wrap; gap: 8px; }
+.booking-time-slot {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #e5e0d8;
+  background: #fff;
+  color: #444;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.booking-time-slot:hover        { background-color: #d0eeea; color: #2a7a6a; }
+.booking-time-slot--selected {
+  background-color: #3a9a8a;
+  border-color: #3a9a8a;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(58,154,138,0.35);
 }
 
 /* ── 月曆 ── */
