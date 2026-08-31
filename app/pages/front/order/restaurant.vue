@@ -1,5 +1,5 @@
 <script setup>
-  import { ref, reactive, computed, watch } from 'vue'
+  import { ref, reactive, computed, watch, nextTick } from 'vue'
   import { useCommonStore } from '~/stores/common.js'
   import { useCustomerStore } from '~/stores/customer.js'
 
@@ -17,8 +17,84 @@
   const BOOKING_BASE = computed(() => commonStore.data.main_url + '/holy/booking')
   // 營業時間設定跟便當訂購共用同一份（RestaurantHoursController），不是訂位獨立一份
   const HOURS_BASE = computed(() => commonStore.data.main_url + '/holy/restaurant/hours')
+  const CUSTOMER_BASE = computed(() => commonStore.data.main_url + '/holy/customer')
+  const GOOGLE_CLIENT_ID = computed(() => commonStore.data.google_client_id)
 
   const router = useRouter()
+
+  // ── 登入狀態（訂位需先登入）───────────────────────────────────────
+  // authLoading：頁面剛載入時先確認是否已登入（例如重新整理），避免還沒查完就先閃一次「請登入」畫面
+  const authLoading = ref(true)
+  const customer = computed(() => customerStore.customer)
+  const isLoggedIn = computed(() => !!customer.value)
+
+  const fetchMe = async () => {
+    try {
+      const data = await (await fetch(`${CUSTOMER_BASE.value}/me`, { credentials: 'include' })).json()
+      if (!data.error) customerStore.setCustomer(data)
+    } catch { /* 未登入或查詢失敗，維持訪客狀態 */ }
+  }
+
+  const initGoogle = () => {
+    if (!window.google) return
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID.value,
+      callback: handleCredential,
+      auto_select: false,
+    })
+  }
+
+  const renderGoogleBtn = (elId) => {
+    if (!window.google) return
+    const el = document.getElementById(elId)
+    if (!el) return
+    window.google.accounts.id.renderButton(el, {
+      theme: 'outline', size: 'large', text: 'signin_with', locale: 'zh-TW', width: 260,
+    })
+  }
+
+  const handleCredential = async (response) => {
+    try {
+      const res = await fetch(`${CUSTOMER_BASE.value}/google-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ credential: response.credential })
+      })
+      const data = await res.json()
+      if (!data.error) customerStore.setCustomer(data)
+    } catch { /* 登入失敗時維持訪客狀態，讓使用者可再試一次 */ }
+  }
+
+  // 載入 Google Identity Services 腳本（可能已被 Navbar 載入過，避免重複插入 script 標籤）
+  const setupGoogleLogin = () => {
+    nextTick(() => {
+      if (isLoggedIn.value) return
+      if (window.google) {
+        initGoogle()
+        renderGoogleBtn('booking-google-btn')
+        return
+      }
+      if (!document.getElementById('google-gsi-script')) {
+        const script = document.createElement('script')
+        script.id = 'google-gsi-script'
+        script.src = 'https://accounts.google.com/gsi/client'
+        script.async = true
+        script.defer = true
+        script.onload = () => { initGoogle(); renderGoogleBtn('booking-google-btn') }
+        document.head.appendChild(script)
+      } else {
+        // script 標籤已存在（可能是 Navbar 加的）但 window.google 還沒 ready，稍等後重試
+        const check = setInterval(() => {
+          if (window.google) {
+            clearInterval(check)
+            initGoogle()
+            renderGoogleBtn('booking-google-btn')
+          }
+        }, 200)
+      }
+    })
+  }
 
   // ── 成功 Modal ────────────────────────────────────────────────────
   const bShowSuccessModal = ref(false)
@@ -228,7 +304,12 @@
     } catch { bSubmitError.value = '預約送出失敗，請稍後再試或直接來電。' } finally { bSubmitting.value = false }
   }
 
-  onMounted(() => {
+  onMounted(async () => {
+    // 訪客先確認一次是否已登入（例如重新整理頁面），避免畫面先閃一次「請登入」才變成表單
+    if (!customerStore.customer) await fetchMe()
+    authLoading.value = false
+    if (!isLoggedIn.value) setupGoogleLogin()
+
     const c = customerStore.customer
     if (c?.name && !bForm.name) bForm.name = c.name
 
@@ -249,6 +330,11 @@
     }
     fetchBookingSettings()
     bSelectDate(bTodayStr)
+  })
+
+  // 訪客在此頁登入成功後，隱藏登入畫面、改顯示訂位表單（Google 按鈕只會在未登入時渲染一次，這裡不需再呼叫 setupGoogleLogin）
+  watch(isLoggedIn, (loggedIn) => {
+    if (loggedIn) authLoading.value = false
   })
 </script>
 
@@ -299,14 +385,28 @@
           <div class="col-12 px-sm-4">
             <div class="row justify-content-center no-gutters">
               <div class="col-12 col-md-8 col-lg-7 rounded bg-lightGreen py-4 px-3 px-sm-4">
-                <!-- 步驟列 -->
-                <div class="booking-steps">
-                  <div
-                          v-for="(step, idx) in bSteps"
-                          :key="step"
-                          class="booking-step"
-                          :class="bStep === idx ? 'booking-step--active' : bStep > idx ? 'booking-step--done' : 'booking-step--pending'"
-                  >
+                <!-- 登入狀態確認中 -->
+                <div v-if="authLoading" class="booking-auth-loading">
+                  確認登入狀態中…
+                </div>
+
+                <!-- 未登入：需先登入才能訂位 -->
+                <div v-else-if="!isLoggedIn" class="booking-auth-gate">
+                  <div class="booking-auth-gate__icon">🔒</div>
+                  <h2 class="booking-auth-gate__title">請先登入才能線上訂位</h2>
+                  <p class="booking-auth-gate__hint">使用 Google 帳號登入後即可開始預約，也能查詢您的訂位紀錄</p>
+                  <div id="booking-google-btn" class="booking-auth-gate__google" />
+                </div>
+
+                <template v-else>
+                  <!-- 步驟列 -->
+                  <div class="booking-steps">
+                    <div
+                            v-for="(step, idx) in bSteps"
+                            :key="step"
+                            class="booking-step"
+                            :class="bStep === idx ? 'booking-step--active' : bStep > idx ? 'booking-step--done' : 'booking-step--pending'"
+                    >
                     <span class="booking-step__inner">
                       <svg
                               v-if="bStep > idx"
@@ -331,295 +431,296 @@
                       </span>
                       {{ step }}
                     </span>
+                      <div
+                              v-if="bStep === idx"
+                              class="booking-step__bar"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Step 0：選擇日期 -->
+                  <div v-if="bStep === 0">
+                    <h2 class="booking-title">
+                      選擇用餐日期
+                    </h2>
+                    <div class="booking-cal">
+                      <div class="booking-cal__header">
+                        <button
+                                :disabled="!bCanPrevMonth"
+                                class="booking-cal__nav"
+                                :class="!bCanPrevMonth && 'booking-cal__nav--disabled'"
+                                @click="bPrevMonth"
+                        >
+                          <svg
+                                  class="booking-cal__nav-icon"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                          ><path
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                  stroke-width="2"
+                                  d="M15 19l-7-7 7-7"
+                          /></svg>
+                        </button>
+                        <span class="booking-cal__month">{{ bCalYear }} 年 {{ bCalMonth }} 月</span>
+                        <button
+                                class="booking-cal__nav"
+                                @click="bNextMonth"
+                        >
+                          <svg
+                                  class="booking-cal__nav-icon"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                          ><path
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                  stroke-width="2"
+                                  d="M9 5l7 7-7 7"
+                          /></svg>
+                        </button>
+                      </div>
+                      <div class="booking-cal__weekdays">
+                        <div
+                                v-for="w in ['日', '一', '二', '三', '四', '五', '六']"
+                                :key="w"
+                        >
+                          {{ w }}
+                        </div>
+                      </div>
+                      <div class="booking-cal__grid">
+                        <div
+                                v-for="(day, idx) in bCalDays"
+                                :key="idx"
+                                class="booking-cal__day"
+                                :class="bDayClass(day)"
+                                :title="day.note"
+                                @click="day.date && !day.disabled && bSelectDate(day.date)"
+                        >
+                          {{ day.label }}
+                        </div>
+                      </div>
+                    </div>
+                    <p class="booking-cal-legend">
+                      <span class="booking-cal-legend__swatch booking-cal-legend__swatch--closed"/> 公休 / 未開放
+                    </p>
                     <div
-                            v-if="bStep === idx"
-                            class="booking-step__bar"
-                    />
-                  </div>
-                </div>
-
-                <!-- Step 0：選擇日期 -->
-                <div v-if="bStep === 0">
-                  <h2 class="booking-title">
-                    選擇用餐日期
-                  </h2>
-                  <div class="booking-cal">
-                    <div class="booking-cal__header">
-                      <button
-                              :disabled="!bCanPrevMonth"
-                              class="booking-cal__nav"
-                              :class="!bCanPrevMonth && 'booking-cal__nav--disabled'"
-                              @click="bPrevMonth"
-                      >
-                        <svg
-                                class="booking-cal__nav-icon"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                        ><path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M15 19l-7-7 7-7"
-                        /></svg>
-                      </button>
-                      <span class="booking-cal__month">{{ bCalYear }} 年 {{ bCalMonth }} 月</span>
-                      <button
-                              class="booking-cal__nav"
-                              @click="bNextMonth"
-                      >
-                        <svg
-                                class="booking-cal__nav-icon"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                        ><path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M9 5l7 7-7 7"
-                        /></svg>
-                      </button>
-                    </div>
-                    <div class="booking-cal__weekdays">
-                      <div
-                              v-for="w in ['日', '一', '二', '三', '四', '五', '六']"
-                              :key="w"
-                      >
-                        {{ w }}
-                      </div>
-                    </div>
-                    <div class="booking-cal__grid">
-                      <div
-                              v-for="(day, idx) in bCalDays"
-                              :key="idx"
-                              class="booking-cal__day"
-                              :class="bDayClass(day)"
-                              :title="day.note"
-                              @click="day.date && !day.disabled && bSelectDate(day.date)"
-                      >
-                        {{ day.label }}
-                      </div>
-                    </div>
-                  </div>
-                  <p class="booking-cal-legend">
-                    <span class="booking-cal-legend__swatch booking-cal-legend__swatch--closed"/> 公休 / 未開放
-                  </p>
-                  <div
-                          v-if="bForm.date"
-                          class="booking-selected"
-                  >
-                    <span>已選擇：{{ bForm.date }}</span>
-                    <span
-                            v-if="bDateGuestsLoading"
-                            class="booking-selected__badge"
-                    >查詢中…</span>
-                    <span
-                            v-else
-                            class="booking-selected__badge"
-                    >已訂 {{ bDateGuests }} 人</span>
-                  </div>
-                  <p
-                          v-if="bErrors.date"
-                          class="booking-error"
-                  >
-                    {{ bErrors.date }}
-                  </p>
-                </div>
-
-                <!-- Step 1：填寫資料 + 葷素數量 -->
-                <div
-                        v-if="bStep === 1"
-                        class="booking-form"
-                >
-                  <h2 class="booking-title">
-                    填寫資料
-                  </h2>
-                  <div class="booking-field">
-                    <label class="booking-label">姓名 <span class="booking-required">*</span></label>
-                    <input
-                            v-model="bForm.name"
-                            placeholder="請輸入姓名"
-                            class="booking-input"
-                            :class="bErrors.name && 'booking-input--error'"
+                            v-if="bForm.date"
+                            class="booking-selected"
                     >
+                      <span>已選擇：{{ bForm.date }}</span>
+                      <span
+                              v-if="bDateGuestsLoading"
+                              class="booking-selected__badge"
+                      >查詢中…</span>
+                      <span
+                              v-else
+                              class="booking-selected__badge"
+                      >已訂 {{ bDateGuests }} 人</span>
+                    </div>
                     <p
-                            v-if="bErrors.name"
+                            v-if="bErrors.date"
                             class="booking-error"
                     >
-                      {{ bErrors.name }}
+                      {{ bErrors.date }}
                     </p>
-                  </div>
-                  <div class="booking-field">
-                    <label class="booking-label">聯絡電話 <span class="booking-required">*</span></label>
-                    <input
-                            v-model="bForm.phone"
-                            type="tel"
-                            placeholder="09xx-xxx-xxx 或 02-xxxxxxxx"
-                            class="booking-input"
-                            :class="bErrors.phone && 'booking-input--error'"
-                    >
-                    <p
-                            v-if="bErrors.phone"
-                            class="booking-error"
-                    >
-                      {{ bErrors.phone }}
-                    </p>
-                  </div>
-                  <div class="booking-field">
-                    <label class="booking-label">用餐時間</label>
-                    <select
-                            v-model="bForm.time"
-                            class="booking-input"
-                    >
-                      <option
-                              v-for="t in bTimeSlots"
-                              :key="t"
-                              :value="t"
-                      >
-                        {{ t }}
-                      </option>
-                    </select>
-                  </div>
-                  <div class="booking-field">
-                    <label class="booking-label">備註</label>
-                    <textarea
-                            v-model="bForm.note"
-                            rows="2"
-                            placeholder="過敏食材、特殊需求…"
-                            class="booking-input booking-textarea"
-                    />
                   </div>
 
-                  <div class="booking-divider">
-                    葷素數量 <span class="booking-required">*</span>
-                  </div>
+                  <!-- Step 1：填寫資料 + 葷素數量 -->
                   <div
-                          v-for="opt in bDietOptions"
-                          :key="opt.key"
-                          class="booking-diet-row"
+                          v-if="bStep === 1"
+                          class="booking-form"
                   >
-                    <div class="booking-diet-row__info">
-                      <span class="booking-diet-row__icon">{{ opt.icon }}</span>
-                      <div>
-                        <div class="booking-diet-row__label">
-                          {{ opt.label }}
-                        </div>
-                        <div class="booking-diet-row__desc">
-                          {{ opt.desc }}
-                        </div>
-                      </div>
-                    </div>
-                    <div class="booking-counter">
-                      <button
-                              class="booking-counter__btn"
-                              @click="bForm[opt.key] = Math.max(0, bForm[opt.key] - 1)"
-                      >
-                        −
-                      </button>
+                    <h2 class="booking-title">
+                      填寫資料
+                    </h2>
+                    <div class="booking-field">
+                      <label class="booking-label">姓名 <span class="booking-required">*</span></label>
                       <input
-                              v-model.number="bForm[opt.key]"
-                              type="number"
-                              min="0"
-                              class="booking-counter__input"
+                              v-model="bForm.name"
+                              placeholder="請輸入姓名"
+                              class="booking-input"
+                              :class="bErrors.name && 'booking-input--error'"
                       >
-                      <button
-                              class="booking-counter__btn"
-                              @click="bForm[opt.key]++"
+                      <p
+                              v-if="bErrors.name"
+                              class="booking-error"
                       >
-                        ＋
-                      </button>
+                        {{ bErrors.name }}
+                      </p>
                     </div>
-                  </div>
-                  <div
-                          v-if="bTotalGuests > 0"
-                          class="booking-qty-summary"
-                  >
-                    合計 <strong>{{ bTotalGuests }}</strong> 人
-                  </div>
-                  <p
-                          v-if="bErrors.diet"
-                          class="booking-error"
-                  >
-                    {{ bErrors.diet }}
-                  </p>
-                </div>
+                    <div class="booking-field">
+                      <label class="booking-label">聯絡電話 <span class="booking-required">*</span></label>
+                      <input
+                              v-model="bForm.phone"
+                              type="tel"
+                              placeholder="09xx-xxx-xxx 或 02-xxxxxxxx"
+                              class="booking-input"
+                              :class="bErrors.phone && 'booking-input--error'"
+                      >
+                      <p
+                              v-if="bErrors.phone"
+                              class="booking-error"
+                      >
+                        {{ bErrors.phone }}
+                      </p>
+                    </div>
+                    <div class="booking-field">
+                      <label class="booking-label">用餐時間</label>
+                      <select
+                              v-model="bForm.time"
+                              class="booking-input"
+                      >
+                        <option
+                                v-for="t in bTimeSlots"
+                                :key="t"
+                                :value="t"
+                        >
+                          {{ t }}
+                        </option>
+                      </select>
+                    </div>
+                    <div class="booking-field">
+                      <label class="booking-label">備註</label>
+                      <textarea
+                              v-model="bForm.note"
+                              rows="2"
+                              placeholder="過敏食材、特殊需求…"
+                              class="booking-input booking-textarea"
+                      />
+                    </div>
 
-                <!-- Step 2：確認送出 -->
-                <div v-if="bStep === 2">
-                  <h2 class="booking-title">
-                    確認預約內容
-                  </h2>
-                  <div class="booking-summary">
+                    <div class="booking-divider">
+                      葷素數量 <span class="booking-required">*</span>
+                    </div>
                     <div
-                            v-for="row in bSummary"
-                            :key="row.label"
-                            class="booking-summary__row"
+                            v-for="opt in bDietOptions"
+                            :key="opt.key"
+                            class="booking-diet-row"
                     >
-                      <span class="booking-summary__label">{{ row.label }}</span>
-                      <span class="booking-summary__value">{{ row.value }}</span>
+                      <div class="booking-diet-row__info">
+                        <span class="booking-diet-row__icon">{{ opt.icon }}</span>
+                        <div>
+                          <div class="booking-diet-row__label">
+                            {{ opt.label }}
+                          </div>
+                          <div class="booking-diet-row__desc">
+                            {{ opt.desc }}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="booking-counter">
+                        <button
+                                class="booking-counter__btn"
+                                @click="bForm[opt.key] = Math.max(0, bForm[opt.key] - 1)"
+                        >
+                          −
+                        </button>
+                        <input
+                                v-model.number="bForm[opt.key]"
+                                type="number"
+                                min="0"
+                                class="booking-counter__input"
+                        >
+                        <button
+                                class="booking-counter__btn"
+                                @click="bForm[opt.key]++"
+                        >
+                          ＋
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <p
-                          v-if="bSubmitError"
-                          class="booking-submit-error"
-                  >
-                    {{ bSubmitError }}
-                  </p>
-                </div>
-
-                <!-- 導覽按鈕 -->
-                <div class="booking-nav">
-                  <button
-                          v-if="bStep > 0"
-                          class="booking-btn booking-btn--back"
-                          @click="bStep--"
-                  >
-                    <svg
-                            class="booking-btn__icon"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                    ><path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M15 19l-7-7 7-7"
-                    /></svg>
-                    上一步
-                  </button>
-                  <div v-else />
-                  <button
-                          v-if="bStep < bSteps.length - 1"
-                          class="booking-btn booking-btn--next"
-                          @click="bNextStep"
-                  >
-                    下一步
-                    <svg
-                            class="booking-btn__icon"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                    ><path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M9 5l7 7-7 7"
-                    /></svg>
-                  </button>
-                  <button
-                          v-else
-                          :disabled="bSubmitting"
-                          class="booking-btn booking-btn--submit"
-                          @click="bSubmit"
-                  >
                     <div
-                            v-if="bSubmitting"
-                            class="booking-btn__spinner"
-                    />
-                    {{ bSubmitting ? '送出中…' : '確認預約' }}
-                  </button>
-                </div>
+                            v-if="bTotalGuests > 0"
+                            class="booking-qty-summary"
+                    >
+                      合計 <strong>{{ bTotalGuests }}</strong> 人
+                    </div>
+                    <p
+                            v-if="bErrors.diet"
+                            class="booking-error"
+                    >
+                      {{ bErrors.diet }}
+                    </p>
+                  </div>
+
+                  <!-- Step 2：確認送出 -->
+                  <div v-if="bStep === 2">
+                    <h2 class="booking-title">
+                      確認預約內容
+                    </h2>
+                    <div class="booking-summary">
+                      <div
+                              v-for="row in bSummary"
+                              :key="row.label"
+                              class="booking-summary__row"
+                      >
+                        <span class="booking-summary__label">{{ row.label }}</span>
+                        <span class="booking-summary__value">{{ row.value }}</span>
+                      </div>
+                    </div>
+                    <p
+                            v-if="bSubmitError"
+                            class="booking-submit-error"
+                    >
+                      {{ bSubmitError }}
+                    </p>
+                  </div>
+
+                  <!-- 導覽按鈕 -->
+                  <div class="booking-nav">
+                    <button
+                            v-if="bStep > 0"
+                            class="booking-btn booking-btn--back"
+                            @click="bStep--"
+                    >
+                      <svg
+                              class="booking-btn__icon"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                      ><path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M15 19l-7-7 7-7"
+                      /></svg>
+                      上一步
+                    </button>
+                    <div v-else />
+                    <button
+                            v-if="bStep < bSteps.length - 1"
+                            class="booking-btn booking-btn--next"
+                            @click="bNextStep"
+                    >
+                      下一步
+                      <svg
+                              class="booking-btn__icon"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                      ><path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M9 5l7 7-7 7"
+                      /></svg>
+                    </button>
+                    <button
+                            v-else
+                            :disabled="bSubmitting"
+                            class="booking-btn booking-btn--submit"
+                            @click="bSubmit"
+                    >
+                      <div
+                              v-if="bSubmitting"
+                              class="booking-btn__spinner"
+                      />
+                      {{ bSubmitting ? '送出中…' : '確認預約' }}
+                    </button>
+                  </div>
+                </template>
 
                 <!-- 注意事項 -->
                 <div class="booking-notice booking-notice--teal">
@@ -695,6 +796,38 @@
 </template>
 
 <style scoped>
+  /* ── 登入門檻 ── */
+  .booking-auth-loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: #999;
+    font-size: 14px;
+  }
+  .booking-auth-gate {
+    text-align: center;
+    padding: 40px 20px 32px;
+  }
+  .booking-auth-gate__icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+  }
+  .booking-auth-gate__title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #333;
+    margin: 0 0 10px;
+  }
+  .booking-auth-gate__hint {
+    font-size: 13px;
+    color: #777;
+    line-height: 1.7;
+    margin: 0 0 22px;
+  }
+  .booking-auth-gate__google {
+    display: flex;
+    justify-content: center;
+  }
+
   /* ── 步驟列 ── */
   .booking-steps {
     display: flex;

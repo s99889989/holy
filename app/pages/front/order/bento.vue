@@ -1,5 +1,5 @@
 <script setup>
-  import {ref, reactive, computed, watch} from 'vue'
+  import {ref, reactive, computed, watch, nextTick} from 'vue'
   import { useCommonStore } from '~/stores/common.js'
   import { useCustomerStore } from '~/stores/customer.js'
 
@@ -16,8 +16,84 @@
   const customerStore = useCustomerStore()
   const LUNCH_BASE = computed(() => commonStore.data.main_url + '/holy/lunch')
   const HOURS_BASE = computed(() => commonStore.data.main_url + '/holy/restaurant/hours')
+  const CUSTOMER_BASE = computed(() => commonStore.data.main_url + '/holy/customer')
+  const GOOGLE_CLIENT_ID = computed(() => commonStore.data.google_client_id)
 
   const router = useRouter()
+
+  // ── 登入狀態（訂便當需先登入）─────────────────────────────────────
+  // authLoading：頁面剛載入時先確認是否已登入（例如重新整理），避免還沒查完就先閃一次「請登入」畫面
+  const authLoading = ref(true)
+  const customer = computed(() => customerStore.customer)
+  const isLoggedIn = computed(() => !!customer.value)
+
+  const fetchMe = async () => {
+    try {
+      const data = await (await fetch(`${CUSTOMER_BASE.value}/me`, { credentials: 'include' })).json()
+      if (!data.error) customerStore.setCustomer(data)
+    } catch { /* 未登入或查詢失敗，維持訪客狀態 */ }
+  }
+
+  const initGoogle = () => {
+    if (!window.google) return
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID.value,
+      callback: handleCredential,
+      auto_select: false,
+    })
+  }
+
+  const renderGoogleBtn = (elId) => {
+    if (!window.google) return
+    const el = document.getElementById(elId)
+    if (!el) return
+    window.google.accounts.id.renderButton(el, {
+      theme: 'outline', size: 'large', text: 'signin_with', locale: 'zh-TW', width: 260,
+    })
+  }
+
+  const handleCredential = async (response) => {
+    try {
+      const res = await fetch(`${CUSTOMER_BASE.value}/google-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ credential: response.credential })
+      })
+      const data = await res.json()
+      if (!data.error) customerStore.setCustomer(data)
+    } catch { /* 登入失敗時維持訪客狀態，讓使用者可再試一次 */ }
+  }
+
+  // 載入 Google Identity Services 腳本（可能已被 Navbar 載入過，避免重複插入 script 標籤）
+  const setupGoogleLogin = () => {
+    nextTick(() => {
+      if (isLoggedIn.value) return
+      if (window.google) {
+        initGoogle()
+        renderGoogleBtn('lunch-google-btn')
+        return
+      }
+      if (!document.getElementById('google-gsi-script')) {
+        const script = document.createElement('script')
+        script.id = 'google-gsi-script'
+        script.src = 'https://accounts.google.com/gsi/client'
+        script.async = true
+        script.defer = true
+        script.onload = () => { initGoogle(); renderGoogleBtn('lunch-google-btn') }
+        document.head.appendChild(script)
+      } else {
+        // script 標籤已存在（可能是 Navbar 加的）但 window.google 還沒 ready，稍等後重試
+        const check = setInterval(() => {
+          if (window.google) {
+            clearInterval(check)
+            initGoogle()
+            renderGoogleBtn('lunch-google-btn')
+          }
+        }, 200)
+      }
+    })
+  }
 
   // ── 成功 Modal ────────────────────────────────────────────────────
   const lShowSuccessModal = ref(false)
@@ -230,7 +306,12 @@
     }
   }
 
-  onMounted(() => {
+  onMounted(async () => {
+    // 訪客先確認一次是否已登入（例如重新整理頁面），避免畫面先閃一次「請登入」才變成表單
+    if (!customerStore.customer) await fetchMe()
+    authLoading.value = false
+    if (!isLoggedIn.value) setupGoogleLogin()
+
     // 已登入時預先帶入名稱／電話（customerStore.customer 已含 mobile/landline，見上方 watch 註解）
     const c = customerStore.customer
     if (c?.name && !lForm.name) lForm.name = c.name
@@ -249,6 +330,11 @@
       }
     }
     fetchRestaurantHours()
+  })
+
+  // 訪客在此頁登入成功後，隱藏登入畫面、改顯示訂購表單
+  watch(isLoggedIn, (loggedIn) => {
+    if (loggedIn) authLoading.value = false
   })
 </script>
 
@@ -279,13 +365,27 @@
             <div class="row justify-content-center no-gutters">
               <div class="col-12 col-md-8 col-lg-7 rounded bg-lightGreen py-4 px-3 px-sm-4">
 
-                <!-- 步驟列 -->
-                <div class="lunch-steps">
-                  <div
-                          v-for="(step, idx) in lSteps" :key="step"
-                          class="lunch-step"
-                          :class="lStep === idx ? 'lunch-step--active' : lStep > idx ? 'lunch-step--done' : 'lunch-step--pending'"
-                  >
+                <!-- 登入狀態確認中 -->
+                <div v-if="authLoading" class="lunch-auth-loading">
+                  確認登入狀態中…
+                </div>
+
+                <!-- 未登入：需先登入才能訂便當 -->
+                <div v-else-if="!isLoggedIn" class="lunch-auth-gate">
+                  <div class="lunch-auth-gate__icon">🔒</div>
+                  <h2 class="lunch-auth-gate__title">請先登入才能線上訂便當</h2>
+                  <p class="lunch-auth-gate__hint">使用 Google 帳號登入後即可開始預訂，也能查詢您的訂購紀錄</p>
+                  <div id="lunch-google-btn" class="lunch-auth-gate__google" />
+                </div>
+
+                <template v-else>
+                  <!-- 步驟列 -->
+                  <div class="lunch-steps">
+                    <div
+                            v-for="(step, idx) in lSteps" :key="step"
+                            class="lunch-step"
+                            :class="lStep === idx ? 'lunch-step--active' : lStep > idx ? 'lunch-step--done' : 'lunch-step--pending'"
+                    >
                     <span class="lunch-step__inner">
                       <svg v-if="lStep > idx" class="lunch-step__check" fill="none" stroke="currentColor"
                            viewBox="0 0 24 24">
@@ -296,129 +396,130 @@
                       </span>
                       {{ step }}
                     </span>
-                    <div v-if="lStep === idx" class="lunch-step__bar"/>
+                      <div v-if="lStep === idx" class="lunch-step__bar"/>
+                    </div>
                   </div>
-                </div>
 
-                <!-- Step 0：選擇日期 -->
-                <div v-if="lStep === 0">
-                  <h2 class="lunch-title">選擇取餐日期</h2>
-                  <div class="lunch-cal">
-                    <div class="lunch-cal__header">
-                      <button @click="lPrevMonth" :disabled="!lCanPrevMonth" class="lunch-cal__nav"
-                              :class="!lCanPrevMonth && 'lunch-cal__nav--disabled'">
-                        <svg class="lunch-cal__nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                        </svg>
-                      </button>
-                      <span class="lunch-cal__month">{{ lCalYear }} 年 {{ lCalMonth }} 月</span>
-                      <button @click="lNextMonth" class="lunch-cal__nav">
-                        <svg class="lunch-cal__nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                      </button>
-                    </div>
-                    <div class="lunch-cal__weekdays">
-                      <div v-for="w in ['日','一','二','三','四','五','六']" :key="w">{{ w }}</div>
-                    </div>
-                    <div class="lunch-cal__grid">
-                      <div
-                              v-for="(day, idx) in lCalDays" :key="idx"
-                              class="lunch-cal__day"
-                              :class="lDayClass(day)"
-                              :title="day.note"
-                              @click="day.date && !day.disabled && lSelectDate(day.date)"
-                      >{{ day.label }}
+                  <!-- Step 0：選擇日期 -->
+                  <div v-if="lStep === 0">
+                    <h2 class="lunch-title">選擇取餐日期</h2>
+                    <div class="lunch-cal">
+                      <div class="lunch-cal__header">
+                        <button @click="lPrevMonth" :disabled="!lCanPrevMonth" class="lunch-cal__nav"
+                                :class="!lCanPrevMonth && 'lunch-cal__nav--disabled'">
+                          <svg class="lunch-cal__nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                          </svg>
+                        </button>
+                        <span class="lunch-cal__month">{{ lCalYear }} 年 {{ lCalMonth }} 月</span>
+                        <button @click="lNextMonth" class="lunch-cal__nav">
+                          <svg class="lunch-cal__nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                          </svg>
+                        </button>
+                      </div>
+                      <div class="lunch-cal__weekdays">
+                        <div v-for="w in ['日','一','二','三','四','五','六']" :key="w">{{ w }}</div>
+                      </div>
+                      <div class="lunch-cal__grid">
+                        <div
+                                v-for="(day, idx) in lCalDays" :key="idx"
+                                class="lunch-cal__day"
+                                :class="lDayClass(day)"
+                                :title="day.note"
+                                @click="day.date && !day.disabled && lSelectDate(day.date)"
+                        >{{ day.label }}
+                        </div>
                       </div>
                     </div>
+                    <p class="lunch-cal-legend">
+                      <span class="lunch-cal-legend__swatch"/> 公休 / 未開放
+                    </p>
+                    <div v-if="lForm.date" class="lunch-selected">
+                      已選擇：{{ lForm.date }}
+                    </div>
+                    <p v-if="lErrors.date" class="lunch-error">{{ lErrors.date }}</p>
                   </div>
-                  <p class="lunch-cal-legend">
-                    <span class="lunch-cal-legend__swatch"/> 公休 / 未開放
-                  </p>
-                  <div v-if="lForm.date" class="lunch-selected">
-                    已選擇：{{ lForm.date }}
-                  </div>
-                  <p v-if="lErrors.date" class="lunch-error">{{ lErrors.date }}</p>
-                </div>
 
-                <!-- Step 1：填寫資料 -->
-                <div v-if="lStep === 1" class="lunch-form">
-                  <h2 class="lunch-title">填寫資料</h2>
-                  <div class="lunch-field">
-                    <label class="lunch-label">姓名 <span class="lunch-required">*</span></label>
-                    <input v-model="lForm.name" placeholder="請輸入姓名" class="lunch-input"
-                           :class="lErrors.name && 'lunch-input--error'"/>
-                    <p v-if="lErrors.name" class="lunch-error">{{ lErrors.name }}</p>
-                  </div>
-                  <div class="lunch-field">
-                    <label class="lunch-label">聯絡電話 <span class="lunch-required">*</span></label>
-                    <input v-model="lForm.phone" type="tel" placeholder="09xx-xxx-xxx 或 02-xxxxxxxx"
-                           class="lunch-input" :class="lErrors.phone && 'lunch-input--error'"/>
-                    <p v-if="lErrors.phone" class="lunch-error">{{ lErrors.phone }}</p>
-                  </div>
-                  <div class="lunch-field">
-                    <label class="lunch-label">取餐時間</label>
-                    <select v-model="lForm.time" class="lunch-input">
-                      <option v-for="t in lTimeSlots" :key="t" :value="t">{{ t }}</option>
-                    </select>
-                  </div>
-                  <div v-for="opt in lDietOptions" :key="opt.key" class="lunch-diet-row">
-                    <div class="lunch-diet-row__info">
-                      <span class="lunch-diet-row__icon">{{ opt.icon }}</span>
-                      <div>
-                        <div class="lunch-diet-row__label">{{ opt.label }}</div>
-                        <div class="lunch-diet-row__desc">{{ opt.desc }}</div>
+                  <!-- Step 1：填寫資料 -->
+                  <div v-if="lStep === 1" class="lunch-form">
+                    <h2 class="lunch-title">填寫資料</h2>
+                    <div class="lunch-field">
+                      <label class="lunch-label">姓名 <span class="lunch-required">*</span></label>
+                      <input v-model="lForm.name" placeholder="請輸入姓名" class="lunch-input"
+                             :class="lErrors.name && 'lunch-input--error'"/>
+                      <p v-if="lErrors.name" class="lunch-error">{{ lErrors.name }}</p>
+                    </div>
+                    <div class="lunch-field">
+                      <label class="lunch-label">聯絡電話 <span class="lunch-required">*</span></label>
+                      <input v-model="lForm.phone" type="tel" placeholder="09xx-xxx-xxx 或 02-xxxxxxxx"
+                             class="lunch-input" :class="lErrors.phone && 'lunch-input--error'"/>
+                      <p v-if="lErrors.phone" class="lunch-error">{{ lErrors.phone }}</p>
+                    </div>
+                    <div class="lunch-field">
+                      <label class="lunch-label">取餐時間</label>
+                      <select v-model="lForm.time" class="lunch-input">
+                        <option v-for="t in lTimeSlots" :key="t" :value="t">{{ t }}</option>
+                      </select>
+                    </div>
+                    <div v-for="opt in lDietOptions" :key="opt.key" class="lunch-diet-row">
+                      <div class="lunch-diet-row__info">
+                        <span class="lunch-diet-row__icon">{{ opt.icon }}</span>
+                        <div>
+                          <div class="lunch-diet-row__label">{{ opt.label }}</div>
+                          <div class="lunch-diet-row__desc">{{ opt.desc }}</div>
+                        </div>
+                      </div>
+                      <div class="lunch-counter">
+                        <button @click="lForm[opt.key] = Math.max(0, lForm[opt.key] - 1)" class="lunch-counter__btn">−
+                        </button>
+                        <input v-model.number="lForm[opt.key]" type="number" min="0" class="lunch-counter__input"/>
+                        <button @click="lForm[opt.key]++" class="lunch-counter__btn">＋</button>
                       </div>
                     </div>
-                    <div class="lunch-counter">
-                      <button @click="lForm[opt.key] = Math.max(0, lForm[opt.key] - 1)" class="lunch-counter__btn">−
-                      </button>
-                      <input v-model.number="lForm[opt.key]" type="number" min="0" class="lunch-counter__input"/>
-                      <button @click="lForm[opt.key]++" class="lunch-counter__btn">＋</button>
+                    <p v-if="lErrors.qty" class="lunch-error">{{ lErrors.qty }}</p>
+                    <div v-if="lTotalQty > 0" class="lunch-qty-summary">
+                      共 <strong>{{ lTotalQty }}</strong> 盒
+                    </div>
+                    <div class="lunch-field">
+                      <label class="lunch-label">備註</label>
+                      <textarea v-model="lForm.note" rows="2" placeholder="特殊需求…" class="lunch-input lunch-textarea"/>
                     </div>
                   </div>
-                  <p v-if="lErrors.qty" class="lunch-error">{{ lErrors.qty }}</p>
-                  <div v-if="lTotalQty > 0" class="lunch-qty-summary">
-                    共 <strong>{{ lTotalQty }}</strong> 盒
-                  </div>
-                  <div class="lunch-field">
-                    <label class="lunch-label">備註</label>
-                    <textarea v-model="lForm.note" rows="2" placeholder="特殊需求…" class="lunch-input lunch-textarea"/>
-                  </div>
-                </div>
 
-                <!-- Step 2：確認送出 -->
-                <div v-if="lStep === 2">
-                  <h2 class="lunch-title">確認預訂內容</h2>
-                  <div class="lunch-summary">
-                    <div v-for="row in lSummary" :key="row.label" class="lunch-summary__row">
-                      <span class="lunch-summary__label">{{ row.label }}</span>
-                      <span class="lunch-summary__value">{{ row.value }}</span>
+                  <!-- Step 2：確認送出 -->
+                  <div v-if="lStep === 2">
+                    <h2 class="lunch-title">確認預訂內容</h2>
+                    <div class="lunch-summary">
+                      <div v-for="row in lSummary" :key="row.label" class="lunch-summary__row">
+                        <span class="lunch-summary__label">{{ row.label }}</span>
+                        <span class="lunch-summary__value">{{ row.value }}</span>
+                      </div>
                     </div>
+                    <p v-if="lSubmitError" class="lunch-submit-error">{{ lSubmitError }}</p>
                   </div>
-                  <p v-if="lSubmitError" class="lunch-submit-error">{{ lSubmitError }}</p>
-                </div>
 
-                <!-- 導覽按鈕 -->
-                <div class="lunch-nav">
-                  <button v-if="lStep > 0" @click="lStep--" class="lunch-btn lunch-btn--back">
-                    <svg class="lunch-btn__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                    </svg>
-                    上一步
-                  </button>
-                  <div v-else/>
-                  <button v-if="lStep < lSteps.length - 1" @click="lNextStep" class="lunch-btn lunch-btn--next">
-                    下一步
-                    <svg class="lunch-btn__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                  </button>
-                  <button v-else @click="lSubmit" :disabled="lSubmitting" class="lunch-btn lunch-btn--submit">
-                    <div v-if="lSubmitting" class="lunch-btn__spinner"/>
-                    {{ lSubmitting ? '送出中…' : '確認預訂' }}
-                  </button>
-                </div>
+                  <!-- 導覽按鈕 -->
+                  <div class="lunch-nav">
+                    <button v-if="lStep > 0" @click="lStep--" class="lunch-btn lunch-btn--back">
+                      <svg class="lunch-btn__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                      </svg>
+                      上一步
+                    </button>
+                    <div v-else/>
+                    <button v-if="lStep < lSteps.length - 1" @click="lNextStep" class="lunch-btn lunch-btn--next">
+                      下一步
+                      <svg class="lunch-btn__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                      </svg>
+                    </button>
+                    <button v-else @click="lSubmit" :disabled="lSubmitting" class="lunch-btn lunch-btn--submit">
+                      <div v-if="lSubmitting" class="lunch-btn__spinner"/>
+                      {{ lSubmitting ? '送出中…' : '確認預訂' }}
+                    </button>
+                  </div>
+                </template>
 
                 <!-- 注意事項 -->
                 <div class="lunch-notice">
@@ -472,6 +573,38 @@
 </template>
 
 <style scoped>
+  /* ── 登入門檻 ── */
+  .lunch-auth-loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: #999;
+    font-size: 14px;
+  }
+  .lunch-auth-gate {
+    text-align: center;
+    padding: 40px 20px 32px;
+  }
+  .lunch-auth-gate__icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+  }
+  .lunch-auth-gate__title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #333;
+    margin: 0 0 10px;
+  }
+  .lunch-auth-gate__hint {
+    font-size: 13px;
+    color: #777;
+    line-height: 1.7;
+    margin: 0 0 22px;
+  }
+  .lunch-auth-gate__google {
+    display: flex;
+    justify-content: center;
+  }
+
   /* ── 步驟列 ── */
   .lunch-steps {
     display: flex;
