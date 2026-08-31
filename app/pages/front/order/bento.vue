@@ -1,332 +1,341 @@
 <script setup>
-import {ref, reactive, computed, watch} from 'vue'
-import { useCommonStore } from '~/stores/common.js'
-import { useCustomerStore } from '~/stores/customer.js'
+  import {ref, reactive, computed, watch, nextTick} from 'vue'
+  import { useCommonStore } from '~/stores/common.js'
+  import { useCustomerStore } from '~/stores/customer.js'
 
-definePageMeta({ layout: 'front' })
+  definePageMeta({ layout: 'front' })
 
-useSiteHead()
+  useSiteHead()
 
-function topFunction() {
-  document.body.scrollTop = 0
-  document.documentElement.scrollTop = 0
-}
-
-const commonStore = useCommonStore()
-const customerStore = useCustomerStore()
-const LUNCH_BASE = computed(() => commonStore.data.main_url + '/holy/lunch')
-const HOURS_BASE = computed(() => commonStore.data.main_url + '/holy/restaurant/hours')
-// 便當取餐時間跟訂位到場時間各自獨立一份（BentoTimeSlotController），不再共用
-const TIMESLOT_BASE = computed(() => commonStore.data.main_url + '/holy/lunch/timeslot')
-
-const router = useRouter()
-
-// ── 成功 Modal ────────────────────────────────────────────────────
-const lShowSuccessModal = ref(false)
-const lConfirmSuccess = () => {
-  lShowSuccessModal.value = false
-  router.push('/front/profile/log')
-}
-
-// ── Google 登入帶入資料 ───────────────────────────────────────────
-// customerStore.customer 本身（來自 /holy/customer/me 或登入回應）就已經含 mobile/landline，
-// 不用再另外打一次「/holy/customer/profile?customerId=」查——那支端點其實不存在。
-watch(() => customerStore.customer, (c) => {
-  if (c?.name && !lForm.name) lForm.name = c.name
-  if (c?.id && !lForm.phone) {
-    if (c.mobile) lForm.phone = c.mobile
-    else if (c.landline) lForm.phone = c.landline
+  function topFunction() {
+    document.body.scrollTop = 0
+    document.documentElement.scrollTop = 0
   }
-})
 
-// ── 日期工具 ─────────────────────────────────────────────────────
-const toDateStr = (d) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const commonStore = useCommonStore()
+  const customerStore = useCustomerStore()
+  const LUNCH_BASE = computed(() => commonStore.data.main_url + '/holy/lunch')
+  const HOURS_BASE = computed(() => commonStore.data.main_url + '/holy/restaurant/hours')
+  const CUSTOMER_BASE = computed(() => commonStore.data.main_url + '/holy/customer')
+  const GOOGLE_CLIENT_ID = computed(() => commonStore.data.google_client_id)
 
-// ── 月曆基礎（需在 lForm 之前宣告）────────────────────────────────
-const lCal = new Date();
-lCal.setHours(0, 0, 0, 0)
-const lTodayStr = toDateStr(lCal)
-const lCalYear = ref(lCal.getFullYear())
-const lCalMonth = ref(lCal.getMonth() + 1)
+  const router = useRouter()
 
-// ── 營業日設定（固定營業星期 / 國定假日公休 / 週六等臨時開放）────────
-// 跟訂位共用同一份餐廳營業規則（RestaurantHoursController），不是便當自己一份；
-// 目前固定營業日為一~五；週六是否開放由店家依訂位/訂購狀況決定（openDates），
-// 未來如客人變多、店家改為一~六營業，後台調整「餐廳設定」即可，前台會自動反映
-// restaurantName/address/phone/description：餐廳基本資訊，跟訂位共用同一份。
-const lSettings = reactive({
-  openWeekdays: [1, 2, 3, 4, 5], closedDates: {}, openDates: {},
-  restaurantName: '', address: '', phone: '', description: ''
-})
-const fetchRestaurantHours = async () => {
-  try {
-    const data = await (await fetch(`${HOURS_BASE.value}/get`)).json()
-    if (Array.isArray(data.openWeekdays)) lSettings.openWeekdays = data.openWeekdays
-    lSettings.closedDates = data.closedDates || {}
-    lSettings.openDates = data.openDates || {}
-    lSettings.restaurantName = data.restaurantName || ''
-    lSettings.address = data.address || ''
-    lSettings.phone = data.phone || ''
-    lSettings.description = data.description || ''
-  } catch { /* 撈不到設定時，維持預設一~五營業，避免整個日曆無法使用 */ }
-}
-// 地址組成 Google 地圖搜尋連結，讓不熟悉店家位置的客人可以直接導航
-const lMapUrl = computed(() =>
-    lSettings.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lSettings.address)}` : '')
-// 固定營業星期組成文字，例如 [1,2,3,4,5] → "一~五"；非連續則列出全部
-const WEEKDAY_LABELS_SHORT = ['日', '一', '二', '三', '四', '五', '六']
-const lWeekdaysLabel = computed(() => {
-  const days = [...lSettings.openWeekdays].sort((a, b) => a - b)
-  if (days.length === 0) return '依公告'
-  const isConsecutive = days.every((d, i) => i === 0 || d === days[i - 1] + 1)
-  if (isConsecutive && days.length > 1) return `${WEEKDAY_LABELS_SHORT[days[0]]}~${WEEKDAY_LABELS_SHORT[days[days.length - 1]]}`
-  return days.map(d => WEEKDAY_LABELS_SHORT[d]).join('、')
-})
+  // ── 登入狀態（訂便當需先登入）─────────────────────────────────────
+  // authLoading：頁面剛載入時先確認是否已登入（例如重新整理），避免還沒查完就先閃一次「請登入」畫面
+  const authLoading = ref(true)
+  const customer = computed(() => customerStore.customer)
+  const isLoggedIn = computed(() => !!customer.value)
 
-// ── 取餐時間設定（便當獨立一份，不跟訂位共用）─────────────────────────
-// 直接呼叫後端 /slots：每筆已經是「依該區段 interval 展開好的時間點清單」
-// （slotId/name/color/interval/temporary/startTime/endTime/slots），前端不用自己重算間隔，
-// 保證跟後端 BentoTimeSlotController 的驗證邏輯一致，不會出現前台可選、送出卻被擋的情況。
-// 不帶 date 只會拿到「預設」時段（給還沒選日期時的一般說明用）；選了日期後要帶 date 查詢，
-// 因為當天可能有臨時時段（會取代預設時段），確保客人看到、選到的時間跟後端驗證邏輯一致。
-const lPeriods = ref([])
-const fetchBentoPeriods = async (date) => {
-  try {
-    const url = date ? `${TIMESLOT_BASE.value}/slots?date=${encodeURIComponent(date)}` : `${TIMESLOT_BASE.value}/slots`
-    const data = await (await fetch(url)).json()
-    lPeriods.value = Array.isArray(data) ? data : []
-    // 時段載入後，若目前選的時間已不在任何適用時段內，重設成第一個時段的開始時間
-    if (!lTimeSlots.value.includes(lForm.time)) lForm.time = lTimeSlots.value[0] || lForm.time
-  } catch { /* 撈不到時段時，時間按鈕會是空的，畫面會提示請致電門市 */ }
-}
-
-// ── 準備時間（便當專屬）───────────────────────────────────────────
-// 客人「今天」下單時，只能選現在時間＋準備時間之後的取餐時段；後端 /slots?date= 已經把
-// 來不及準備的時間點濾掉了（保證不會出現前台可選、送出卻被擋），這裡另外抓 prepMinutes
-// 只是為了顯示說明文字，讓客人知道「為什麼有些時間不能選」。
-const lPrepMinutes = ref(0)
-const fetchPrepMinutes = async () => {
-  try {
-    const data = await (await fetch(`${TIMESLOT_BASE.value}/prep-time`)).json()
-    lPrepMinutes.value = data.prepMinutes || 0
-  } catch { /* 抓不到就不顯示說明文字，不影響實際下單限制（後端仍會擋） */ }
-}
-// 只有選的日期是「今天」且有設定準備時間時才顯示；换算成「現在最早可選幾點」給客人看
-const lPrepNote = computed(() => {
-  if (!lPrepMinutes.value || lForm.date !== lTodayStr) return ''
-  const now = new Date()
-  now.setMinutes(now.getMinutes() + lPrepMinutes.value)
-  const hh = String(now.getHours()).padStart(2, '0')
-  const mm = String(now.getMinutes()).padStart(2, '0')
-  return `因應備餐時間，今日最早可選 ${hh}:${mm} 之後的取餐時段`
-})
-// 給餐廳資訊卡用的時段摘要文字，例如「午餐 11:00–14:00」；多個時段用頓號連接
-const lPeriodsLabel = computed(() =>
-    lPeriods.value.length > 0 ? lPeriods.value.map(p => `${p.name} ${p.startTime}–${p.endTime}`).join('、') : '時段依公告')
-// 判斷某日期是否開放線上訂購：公休日 > 額外開放日 > 每週固定營業日
-const lIsBookable = (dateStr) => {
-  if (lSettings.closedDates[dateStr] !== undefined) return false
-  if (lSettings.openDates[dateStr] !== undefined) return true
-  const dow = new Date(dateStr).getDay()
-  return lSettings.openWeekdays.includes(dow)
-}
-// 該日期不可訂購時，顯示原因用的提示文字：店家有填備註就顯示備註，沒填就顯示制式的休息訊息
-const lDayNote = (dateStr) => {
-  if (lSettings.closedDates[dateStr] !== undefined) {
-    return lSettings.closedDates[dateStr] || '餐廳今日公休，如有需要請來電洽詢'
+  const fetchMe = async () => {
+    try {
+      const data = await (await fetch(`${CUSTOMER_BASE.value}/me`, { credentials: 'include' })).json()
+      if (!data.error) customerStore.setCustomer(data)
+    } catch { /* 未登入或查詢失敗，維持訪客狀態 */ }
   }
-  if (lSettings.openDates[dateStr] !== undefined) {
-    return lSettings.openDates[dateStr] || '本日臨時開放訂購'
-  }
-  if (!lSettings.openWeekdays.includes(new Date(dateStr).getDay())) return '餐廳今日公休，如有需要請來電洽詢'
-  return ''
-}
 
-// ── 電話驗證 ─────────────────────────────────────────────────────
-const validateMobile = (c) => /^09\d{8}$/.test(c)
-const validateLandline = (c) => {
-  if (/^02\d{8}$/.test(c)) return true
-  if (/^0[3-8]\d{7,8}$/.test(c)) return true
-  if (/^037\d{6}$/.test(c)) return true
-  if (/^049\d{6}$/.test(c)) return true
-  if (/^089\d{6}$/.test(c)) return true
-  if (/^082[36]\d{6}$/.test(c)) return true
-  if (/^0836\d{6}$/.test(c)) return true
-  return false
-}
-const validateTWPhone = (val) => {
-  if (!val) return false
-  const clean = val.replace(/[-\s]/g, '')
-  return validateMobile(clean) || validateLandline(clean)
-}
-
-// ── 步驟 ─────────────────────────────────────────────────────────
-const lStep = ref(0)
-const lSteps = ['選擇日期', '填寫資料', '確認送出']
-const lForm = reactive({
-  name: '', phone: '', date: lTodayStr, time: '12:00',
-  meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0, note: ''
-})
-const lErrors = reactive({})
-const lSubmitting = ref(false)
-const lSubmitError = ref('')
-// 取餐時段按鈕：直接使用後端 /slots 依各區段 interval 展開好的時間點分組（見上方
-// fetchBentoPeriods），前端不再自己算間隔或跑迴圈——每個區段各自的間隔（分鐘）由後台
-// 「取餐時間設定」的 interval 欄位決定，不再是寫死的固定分鐘數。
-const lTimeSlotGroups = computed(() => lPeriods.value
-    .map(p => ({ label: p.name, times: p.slots }))
-    .filter(g => g.times.length > 0))
-// 所有可選時間攤平成一個清單，給表單驗證用
-const lTimeSlots = computed(() => lTimeSlotGroups.value.flatMap(g => g.times))
-const lDietOptions = [
-  {key: 'meatQty', icon: '🍖', label: '葷食便當', desc: '含肉類料理'},
-  {key: 'fullVegQty', icon: '🌿', label: '全素便當', desc: '不含蛋奶五辛'},
-  {key: 'eggVegQty', icon: '🥚', label: '蛋奶素便當', desc: '可食蛋奶製品'},
-  {key: 'spiceVegQty', icon: '🧄', label: '五辛素便當', desc: '可食蔥薑蒜'},
-]
-const lTotalQty = computed(() =>
-    lForm.meatQty + lForm.fullVegQty + lForm.eggVegQty + lForm.spiceVegQty
-)
-
-// ── 月曆（續）────────────────────────────────────────────────────
-const lCanPrevMonth = computed(() =>
-    lCalYear.value > lCal.getFullYear() ||
-    (lCalYear.value === lCal.getFullYear() && lCalMonth.value > lCal.getMonth() + 1))
-const lPrevMonth = () => {
-  if (!lCanPrevMonth.value) return
-  if (lCalMonth.value === 1) {
-    lCalYear.value--;
-    lCalMonth.value = 12
-  } else lCalMonth.value--
-}
-const lNextMonth = () => {
-  if (lCalMonth.value === 12) {
-    lCalYear.value++;
-    lCalMonth.value = 1
-  } else lCalMonth.value++
-}
-const lCalDays = computed(() => {
-  const firstDay = new Date(lCalYear.value, lCalMonth.value - 1, 1).getDay()
-  const daysInMonth = new Date(lCalYear.value, lCalMonth.value, 0).getDate()
-  const days = []
-  for (let i = 0; i < firstDay; i++) days.push({label: '', date: null, disabled: true})
-  for (let d = 1; d <= daysInMonth; d++) {
-    const mm = String(lCalMonth.value).padStart(2, '0'), dd = String(d).padStart(2, '0')
-    const str = `${lCalYear.value}-${mm}-${dd}`
-    const isPast = str < lTodayStr
-    const bookable = lIsBookable(str)
-    days.push({
-      label: d,
-      date: str,
-      disabled: isPast,
-      closed: !isPast && !bookable,
-      note: isPast ? '' : lDayNote(str)
+  const initGoogle = () => {
+    if (!window.google) return
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID.value,
+      callback: handleCredential,
+      auto_select: false,
     })
   }
-  return days
-})
-const lDayClass = (day) => {
-  if (!day.date) return 'lunch-cal__day--empty'
-  if (day.closed) return 'lunch-cal__day--closed'
-  if (day.disabled) return 'lunch-cal__day--disabled'
-  if (day.date === lForm.date) return 'lunch-cal__day--selected'
-  return 'lunch-cal__day--available'
-}
 
-// 未開放訂購的日期：點了立刻顯示提示，不要等到按下一步才知道，手機沒有滑鼠 hover，不能只靠 title 提示
-const lSelectDate = (date) => {
-  lForm.date = date
-  // 換日期要重新查當天的取餐時間——當天可能有臨時時段（取代預設時段），
-  // 不重新查的話畫面顯示的時間跟後端驗證邏輯會對不上。
-  fetchBentoPeriods(date)
-  if (!lIsBookable(date)) {
-    lErrors.date = lDayNote(date) || '該日期未開放訂購，請重新選擇'
-    return
+  const renderGoogleBtn = (elId) => {
+    if (!window.google) return
+    const el = document.getElementById(elId)
+    if (!el) return
+    window.google.accounts.id.renderButton(el, {
+      theme: 'outline', size: 'large', text: 'signin_with', locale: 'zh-TW', width: 260,
+    })
   }
-  delete lErrors.date
-}
 
-const lSummary = computed(() => {
-  const rows = [
-    {label: '日期', value: lForm.date},
-    {label: '取餐', value: lForm.time},
+  const handleCredential = async (response) => {
+    try {
+      const res = await fetch(`${CUSTOMER_BASE.value}/google-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ credential: response.credential })
+      })
+      const data = await res.json()
+      if (!data.error) customerStore.setCustomer(data)
+    } catch { /* 登入失敗時維持訪客狀態，讓使用者可再試一次 */ }
+  }
+
+  // 載入 Google Identity Services 腳本（可能已被 Navbar 載入過，避免重複插入 script 標籤）
+  const setupGoogleLogin = () => {
+    nextTick(() => {
+      if (isLoggedIn.value) return
+      if (window.google) {
+        initGoogle()
+        renderGoogleBtn('lunch-google-btn')
+        return
+      }
+      if (!document.getElementById('google-gsi-script')) {
+        const script = document.createElement('script')
+        script.id = 'google-gsi-script'
+        script.src = 'https://accounts.google.com/gsi/client'
+        script.async = true
+        script.defer = true
+        script.onload = () => { initGoogle(); renderGoogleBtn('lunch-google-btn') }
+        document.head.appendChild(script)
+      } else {
+        // script 標籤已存在（可能是 Navbar 加的）但 window.google 還沒 ready，稍等後重試
+        const check = setInterval(() => {
+          if (window.google) {
+            clearInterval(check)
+            initGoogle()
+            renderGoogleBtn('lunch-google-btn')
+          }
+        }, 200)
+      }
+    })
+  }
+
+  // ── 成功 Modal ────────────────────────────────────────────────────
+  const lShowSuccessModal = ref(false)
+  const lConfirmSuccess = () => {
+    lShowSuccessModal.value = false
+    router.push('/front/profile/log')
+  }
+
+  // ── Google 登入帶入資料 ───────────────────────────────────────────
+  // customerStore.customer 本身（來自 /holy/customer/me 或登入回應）就已經含 mobile/landline，
+  // 不用再另外打一次「/holy/customer/profile?customerId=」查——那支端點其實不存在。
+  watch(() => customerStore.customer, (c) => {
+    if (c?.name && !lForm.name) lForm.name = c.name
+    if (c?.id && !lForm.phone) {
+      if (c.mobile) lForm.phone = c.mobile
+      else if (c.landline) lForm.phone = c.landline
+    }
+  })
+
+  // ── 日期工具 ─────────────────────────────────────────────────────
+  const toDateStr = (d) =>
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  // ── 月曆基礎（需在 lForm 之前宣告）────────────────────────────────
+  const lCal = new Date();
+  lCal.setHours(0, 0, 0, 0)
+  const lTodayStr = toDateStr(lCal)
+  const lCalYear = ref(lCal.getFullYear())
+  const lCalMonth = ref(lCal.getMonth() + 1)
+
+  // ── 營業日設定（固定營業星期 / 國定假日公休 / 週六等臨時開放）────────
+  // 跟訂位共用同一份餐廳營業規則（RestaurantHoursController），不是便當自己一份；
+  // 目前固定營業日為一~五；週六是否開放由店家依訂位/訂購狀況決定（openDates），
+  // 未來如客人變多、店家改為一~六營業，後台調整「餐廳設定」即可，前台會自動反映
+  const lSettings = reactive({ openWeekdays: [1, 2, 3, 4, 5], closedDates: {}, openDates: {} })
+  const fetchRestaurantHours = async () => {
+    try {
+      const data = await (await fetch(`${HOURS_BASE.value}/get`)).json()
+      if (Array.isArray(data.openWeekdays)) lSettings.openWeekdays = data.openWeekdays
+      lSettings.closedDates = data.closedDates || {}
+      lSettings.openDates = data.openDates || {}
+    } catch { /* 撈不到設定時，維持預設一~五營業，避免整個日曆無法使用 */ }
+  }
+  // 判斷某日期是否開放線上訂購：公休日 > 額外開放日 > 每週固定營業日
+  const lIsBookable = (dateStr) => {
+    if (lSettings.closedDates[dateStr] !== undefined) return false
+    if (lSettings.openDates[dateStr] !== undefined) return true
+    const dow = new Date(dateStr).getDay()
+    return lSettings.openWeekdays.includes(dow)
+  }
+  // 該日期不可訂購時，顯示原因用的提示文字：店家有填備註就顯示備註，沒填就顯示制式的休息訊息
+  const lDayNote = (dateStr) => {
+    if (lSettings.closedDates[dateStr] !== undefined) {
+      return lSettings.closedDates[dateStr] || '餐廳今日公休，如有需要請來電洽詢'
+    }
+    if (lSettings.openDates[dateStr] !== undefined) {
+      return lSettings.openDates[dateStr] || '本日臨時開放訂購'
+    }
+    if (!lSettings.openWeekdays.includes(new Date(dateStr).getDay())) return '餐廳今日公休，如有需要請來電洽詢'
+    return ''
+  }
+
+  // ── 電話驗證 ─────────────────────────────────────────────────────
+  const validateMobile = (c) => /^09\d{8}$/.test(c)
+  const validateLandline = (c) => {
+    if (/^02\d{8}$/.test(c)) return true
+    if (/^0[3-8]\d{7,8}$/.test(c)) return true
+    if (/^037\d{6}$/.test(c)) return true
+    if (/^049\d{6}$/.test(c)) return true
+    if (/^089\d{6}$/.test(c)) return true
+    if (/^082[36]\d{6}$/.test(c)) return true
+    if (/^0836\d{6}$/.test(c)) return true
+    return false
+  }
+  const validateTWPhone = (val) => {
+    if (!val) return false
+    const clean = val.replace(/[-\s]/g, '')
+    return validateMobile(clean) || validateLandline(clean)
+  }
+
+  // ── 步驟 ─────────────────────────────────────────────────────────
+  const lStep = ref(0)
+  const lSteps = ['選擇日期', '填寫資料', '確認送出']
+  const lForm = reactive({
+    name: '', phone: '', date: lTodayStr, time: '12:00',
+    meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0, note: ''
+  })
+  const lErrors = reactive({})
+  const lSubmitting = ref(false)
+  const lSubmitError = ref('')
+  const lTimeSlots = ['10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00']
+  const lDietOptions = [
+    {key: 'meatQty', icon: '🍖', label: '葷食便當', desc: '含肉類料理'},
+    {key: 'fullVegQty', icon: '🌿', label: '全素便當', desc: '不含蛋奶五辛'},
+    {key: 'eggVegQty', icon: '🥚', label: '蛋奶素便當', desc: '可食蛋奶製品'},
+    {key: 'spiceVegQty', icon: '🧄', label: '五辛素便當', desc: '可食蔥薑蒜'},
   ]
-  const dietMap = {meatQty: '葷食', fullVegQty: '全素', eggVegQty: '蛋奶素', spiceVegQty: '五辛素'}
-  for (const [key, label] of Object.entries(dietMap)) {
-    if (lForm[key] > 0) rows.push({label, value: `${lForm[key]} 盒`})
-  }
-  rows.push({label: '合計', value: `${lTotalQty.value} 盒`})
-  if (lForm.note) rows.push({label: '備註', value: lForm.note})
-  return rows
-})
+  const lTotalQty = computed(() =>
+          lForm.meatQty + lForm.fullVegQty + lForm.eggVegQty + lForm.spiceVegQty
+  )
 
-const lNextStep = () => {
-  Object.keys(lErrors).forEach(k => delete lErrors[k])
-  if (lStep.value === 0) {
-    if (!lForm.date) { lErrors.date = '請選擇取餐日期'; return }
-    if (!lIsBookable(lForm.date)) { lErrors.date = lDayNote(lForm.date) || '該日期未開放訂購，請重新選擇'; return }
+  // ── 月曆（續）────────────────────────────────────────────────────
+  const lCanPrevMonth = computed(() =>
+          lCalYear.value > lCal.getFullYear() ||
+          (lCalYear.value === lCal.getFullYear() && lCalMonth.value > lCal.getMonth() + 1))
+  const lPrevMonth = () => {
+    if (!lCanPrevMonth.value) return
+    if (lCalMonth.value === 1) {
+      lCalYear.value--;
+      lCalMonth.value = 12
+    } else lCalMonth.value--
   }
-  if (lStep.value === 1) {
-    if (!lForm.name.trim()) lErrors.name = '請輸入姓名'
-    if (!lForm.phone.trim()) lErrors.phone = '請輸入聯絡電話'
-    else if (!validateTWPhone(lForm.phone)) lErrors.phone = '請輸入正確的手機（09xxxxxxxx）或市話（如 02-12345678、07-1234567）'
-    // 時段選單本身就是依營業時段動態產生，理論上不會選到範圍外，這裡是保險
-    if (!lTimeSlots.value.includes(lForm.time)) lErrors.time = `請選擇營業時段內的取餐時間（${lPeriodsLabel.value}）`
-    if (lForm.meatQty === 0 && lForm.fullVegQty === 0 && lForm.eggVegQty === 0 && lForm.spiceVegQty === 0) lErrors.qty = '請至少預訂一盒便當'
-    if (Object.keys(lErrors).length > 0) return
+  const lNextMonth = () => {
+    if (lCalMonth.value === 12) {
+      lCalYear.value++;
+      lCalMonth.value = 1
+    } else lCalMonth.value++
   }
-  lStep.value++
-}
-
-const lSubmit = async () => {
-  lSubmitError.value = '';
-  lSubmitting.value = true
-  try {
-    const res = await fetch(`${LUNCH_BASE.value}/save`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      credentials: 'include',
-      body: JSON.stringify({...lForm, status: '待確認', customerId: customerStore.customer?.id ?? ''}),
-    })
-    if (!res.ok) throw new Error()
-    const data = await res.json()
-    // 後端遇到不可訂購日期等情況會回傳 {"error": "…"}（HTTP 狀態仍是 200），需另外判斷
-    if (data && data.error) { lSubmitError.value = data.error; return }
-    Object.assign(lForm, {
-      name: '', phone: '', date: '', time: '12:00',
-      meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0, note: ''
-    })
-    lStep.value = 0
-    lShowSuccessModal.value = true
-  } catch {
-    lSubmitError.value = '預訂送出失敗，請稍後再試或直接來電。'
-  } finally {
-    lSubmitting.value = false
-  }
-}
-
-onMounted(() => {
-  // 已登入時預先帶入名稱／電話（customerStore.customer 已含 mobile/landline，見上方 watch 註解）
-  const c = customerStore.customer
-  if (c?.name && !lForm.name) lForm.name = c.name
-  if (c?.id && !lForm.phone) {
-    if (c.mobile) lForm.phone = c.mobile
-    else if (c.landline) lForm.phone = c.landline
+  const lCalDays = computed(() => {
+    const firstDay = new Date(lCalYear.value, lCalMonth.value - 1, 1).getDay()
+    const daysInMonth = new Date(lCalYear.value, lCalMonth.value, 0).getDate()
+    const days = []
+    for (let i = 0; i < firstDay; i++) days.push({label: '', date: null, disabled: true})
+    for (let d = 1; d <= daysInMonth; d++) {
+      const mm = String(lCalMonth.value).padStart(2, '0'), dd = String(d).padStart(2, '0')
+      const str = `${lCalYear.value}-${mm}-${dd}`
+      const isPast = str < lTodayStr
+      const bookable = lIsBookable(str)
+      days.push({
+        label: d,
+        date: str,
+        disabled: isPast,
+        closed: !isPast && !bookable,
+        note: isPast ? '' : lDayNote(str)
+      })
+    }
+    return days
+  })
+  const lDayClass = (day) => {
+    if (!day.date) return 'lunch-cal__day--empty'
+    if (day.closed) return 'lunch-cal__day--closed'
+    if (day.disabled) return 'lunch-cal__day--disabled'
+    if (day.date === lForm.date) return 'lunch-cal__day--selected'
+    return 'lunch-cal__day--available'
   }
 
-  window.onscroll = () => {
-    const btn = document.getElementById('myBtn')
-    if (btn) {
-      btn.style.display =
-          document.body.scrollTop > 20 || document.documentElement.scrollTop > 20
-              ? 'block'
-              : 'none'
+  // 未開放訂購的日期：點了立刻顯示提示，不要等到按下一步才知道，手機沒有滑鼠 hover，不能只靠 title 提示
+  const lSelectDate = (date) => {
+    lForm.date = date
+    if (!lIsBookable(date)) {
+      lErrors.date = lDayNote(date) || '該日期未開放訂購，請重新選擇'
+      return
+    }
+    delete lErrors.date
+  }
+
+  const lSummary = computed(() => {
+    const rows = [
+      {label: '日期', value: lForm.date},
+      {label: '取餐', value: lForm.time},
+    ]
+    const dietMap = {meatQty: '葷食', fullVegQty: '全素', eggVegQty: '蛋奶素', spiceVegQty: '五辛素'}
+    for (const [key, label] of Object.entries(dietMap)) {
+      if (lForm[key] > 0) rows.push({label, value: `${lForm[key]} 盒`})
+    }
+    rows.push({label: '合計', value: `${lTotalQty.value} 盒`})
+    if (lForm.note) rows.push({label: '備註', value: lForm.note})
+    return rows
+  })
+
+  const lNextStep = () => {
+    Object.keys(lErrors).forEach(k => delete lErrors[k])
+    if (lStep.value === 0) {
+      if (!lForm.date) { lErrors.date = '請選擇取餐日期'; return }
+      if (!lIsBookable(lForm.date)) { lErrors.date = lDayNote(lForm.date) || '該日期未開放訂購，請重新選擇'; return }
+    }
+    if (lStep.value === 1) {
+      if (!lForm.name.trim()) lErrors.name = '請輸入姓名'
+      if (!lForm.phone.trim()) lErrors.phone = '請輸入聯絡電話'
+      else if (!validateTWPhone(lForm.phone)) lErrors.phone = '請輸入正確的手機（09xxxxxxxx）或市話（如 02-12345678、07-1234567）'
+      if (lForm.meatQty === 0 && lForm.fullVegQty === 0 && lForm.eggVegQty === 0 && lForm.spiceVegQty === 0) lErrors.qty = '請至少預訂一盒便當'
+      if (Object.keys(lErrors).length > 0) return
+    }
+    lStep.value++
+  }
+
+  const lSubmit = async () => {
+    lSubmitError.value = '';
+    lSubmitting.value = true
+    try {
+      const res = await fetch(`${LUNCH_BASE.value}/save`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        credentials: 'include',
+        body: JSON.stringify({...lForm, status: '待確認', customerId: customerStore.customer?.id ?? ''}),
+      })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      // 後端遇到不可訂購日期等情況會回傳 {"error": "…"}（HTTP 狀態仍是 200），需另外判斷
+      if (data && data.error) { lSubmitError.value = data.error; return }
+      Object.assign(lForm, {
+        name: '', phone: '', date: '', time: '12:00',
+        meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0, note: ''
+      })
+      lStep.value = 0
+      lShowSuccessModal.value = true
+    } catch {
+      lSubmitError.value = '預訂送出失敗，請稍後再試或直接來電。'
+    } finally {
+      lSubmitting.value = false
     }
   }
-  fetchRestaurantHours()
-  fetchBentoPeriods(lForm.date)
-  fetchPrepMinutes()
-})
+
+  onMounted(async () => {
+    // 訪客先確認一次是否已登入（例如重新整理頁面），避免畫面先閃一次「請登入」才變成表單
+    if (!customerStore.customer) await fetchMe()
+    authLoading.value = false
+    if (!isLoggedIn.value) setupGoogleLogin()
+
+    // 已登入時預先帶入名稱／電話（customerStore.customer 已含 mobile/landline，見上方 watch 註解）
+    const c = customerStore.customer
+    if (c?.name && !lForm.name) lForm.name = c.name
+    if (c?.id && !lForm.phone) {
+      if (c.mobile) lForm.phone = c.mobile
+      else if (c.landline) lForm.phone = c.landline
+    }
+
+    window.onscroll = () => {
+      const btn = document.getElementById('myBtn')
+      if (btn) {
+        btn.style.display =
+                document.body.scrollTop > 20 || document.documentElement.scrollTop > 20
+                        ? 'block'
+                        : 'none'
+      }
+    }
+    fetchRestaurantHours()
+  })
+
+  // 訪客在此頁登入成功後，隱藏登入畫面、改顯示訂購表單
+  watch(isLoggedIn, (loggedIn) => {
+    if (loggedIn) authLoading.value = false
+  })
 </script>
 
 <template>
@@ -349,35 +358,6 @@ onMounted(() => {
         <NuxtLink to="/front/restaurant">田園餐廳</NuxtLink>
         > 便當預訂
       </section>
-
-      <!-- ── 餐廳資訊：給不熟悉店家位置的客人參考 ── -->
-      <section
-          v-if="lSettings.restaurantName || lSettings.address || lSettings.phone"
-          class="mx-3 mx-sm-5 mb-3"
-      >
-        <div class="lunch-info-card">
-          <p v-if="lSettings.restaurantName" class="lunch-info-card__name">{{ lSettings.restaurantName }}</p>
-          <p v-if="lSettings.description" class="lunch-info-card__desc">{{ lSettings.description }}</p>
-          <div class="lunch-info-card__rows">
-            <a
-                v-if="lSettings.address"
-                :href="lMapUrl"
-                target="_blank"
-                rel="noopener"
-                class="lunch-info-card__row"
-            >
-              📍 {{ lSettings.address }}
-            </a>
-            <a v-if="lSettings.phone" :href="`tel:${lSettings.phone}`" class="lunch-info-card__row">
-              📞 {{ lSettings.phone }}
-            </a>
-            <span class="lunch-info-card__row lunch-info-card__row--static">
-              🕐 固定營業 {{ lWeekdaysLabel }}．{{ lPeriodsLabel }}（六日依公告，詳見日曆）
-            </span>
-          </div>
-        </div>
-      </section>
-
       <section id="content" class="mx-3 mx-sm-5">
         <div class="bar-green bar-green-center"></div>
         <div class="row bg-greenweb py-5 px-sm-2">
@@ -385,13 +365,27 @@ onMounted(() => {
             <div class="row justify-content-center no-gutters">
               <div class="col-12 col-md-8 col-lg-7 rounded bg-lightGreen py-4 px-3 px-sm-4">
 
-                <!-- 步驟列 -->
-                <div class="lunch-steps">
-                  <div
-                      v-for="(step, idx) in lSteps" :key="step"
-                      class="lunch-step"
-                      :class="lStep === idx ? 'lunch-step--active' : lStep > idx ? 'lunch-step--done' : 'lunch-step--pending'"
-                  >
+                <!-- 登入狀態確認中 -->
+                <div v-if="authLoading" class="lunch-auth-loading">
+                  確認登入狀態中…
+                </div>
+
+                <!-- 未登入：需先登入才能訂便當 -->
+                <div v-else-if="!isLoggedIn" class="lunch-auth-gate">
+                  <div class="lunch-auth-gate__icon">🔒</div>
+                  <h2 class="lunch-auth-gate__title">請先登入才能線上訂便當</h2>
+                  <p class="lunch-auth-gate__hint">使用 Google 帳號登入後即可開始預訂，也能查詢您的訂購紀錄</p>
+                  <div id="lunch-google-btn" class="lunch-auth-gate__google" />
+                </div>
+
+                <template v-else>
+                  <!-- 步驟列 -->
+                  <div class="lunch-steps">
+                    <div
+                            v-for="(step, idx) in lSteps" :key="step"
+                            class="lunch-step"
+                            :class="lStep === idx ? 'lunch-step--active' : lStep > idx ? 'lunch-step--done' : 'lunch-step--pending'"
+                    >
                     <span class="lunch-step__inner">
                       <svg v-if="lStep > idx" class="lunch-step__check" fill="none" stroke="currentColor"
                            viewBox="0 0 24 24">
@@ -402,144 +396,130 @@ onMounted(() => {
                       </span>
                       {{ step }}
                     </span>
-                    <div v-if="lStep === idx" class="lunch-step__bar"/>
+                      <div v-if="lStep === idx" class="lunch-step__bar"/>
+                    </div>
                   </div>
-                </div>
 
-                <!-- Step 0：選擇日期 -->
-                <div v-if="lStep === 0">
-                  <h2 class="lunch-title">選擇取餐日期</h2>
-                  <div class="lunch-cal">
-                    <div class="lunch-cal__header">
-                      <button @click="lPrevMonth" :disabled="!lCanPrevMonth" class="lunch-cal__nav"
-                              :class="!lCanPrevMonth && 'lunch-cal__nav--disabled'">
-                        <svg class="lunch-cal__nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                        </svg>
-                      </button>
-                      <span class="lunch-cal__month">{{ lCalYear }} 年 {{ lCalMonth }} 月</span>
-                      <button @click="lNextMonth" class="lunch-cal__nav">
-                        <svg class="lunch-cal__nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                      </button>
-                    </div>
-                    <div class="lunch-cal__weekdays">
-                      <div v-for="w in ['日','一','二','三','四','五','六']" :key="w">{{ w }}</div>
-                    </div>
-                    <div class="lunch-cal__grid">
-                      <div
-                          v-for="(day, idx) in lCalDays" :key="idx"
-                          class="lunch-cal__day"
-                          :class="lDayClass(day)"
-                          :title="day.note"
-                          @click="day.date && !day.disabled && lSelectDate(day.date)"
-                      >{{ day.label }}
-                      </div>
-                    </div>
-                  </div>
-                  <p class="lunch-cal-legend">
-                    <span class="lunch-cal-legend__swatch"/> 公休 / 未開放
-                  </p>
-                  <div v-if="lForm.date" class="lunch-selected">
-                    已選擇：{{ lForm.date }}
-                  </div>
-                  <p v-if="lErrors.date" class="lunch-error">{{ lErrors.date }}</p>
-                </div>
-
-                <!-- Step 1：填寫資料 -->
-                <div v-if="lStep === 1" class="lunch-form">
-                  <h2 class="lunch-title">填寫資料</h2>
-                  <div class="lunch-field">
-                    <label class="lunch-label">姓名 <span class="lunch-required">*</span></label>
-                    <input v-model="lForm.name" placeholder="請輸入姓名" class="lunch-input"
-                           :class="lErrors.name && 'lunch-input--error'"/>
-                    <p v-if="lErrors.name" class="lunch-error">{{ lErrors.name }}</p>
-                  </div>
-                  <div class="lunch-field">
-                    <label class="lunch-label">聯絡電話 <span class="lunch-required">*</span></label>
-                    <input v-model="lForm.phone" type="tel" placeholder="09xx-xxx-xxx 或 02-xxxxxxxx"
-                           class="lunch-input" :class="lErrors.phone && 'lunch-input--error'"/>
-                    <p v-if="lErrors.phone" class="lunch-error">{{ lErrors.phone }}</p>
-                  </div>
-                  <div class="lunch-field">
-                    <label class="lunch-label">取餐時間</label>
-                    <div v-for="group in lTimeSlotGroups" :key="group.label" class="lunch-time-group">
-                      <p class="lunch-time-group__label">{{ group.label }}</p>
-                      <div class="lunch-time-slots">
-                        <button
-                            v-for="t in group.times"
-                            :key="t"
-                            type="button"
-                            class="lunch-time-slot"
-                            :class="lForm.time === t && 'lunch-time-slot--selected'"
-                            @click="lForm.time = t"
-                        >
-                          {{ t }}
+                  <!-- Step 0：選擇日期 -->
+                  <div v-if="lStep === 0">
+                    <h2 class="lunch-title">選擇取餐日期</h2>
+                    <div class="lunch-cal">
+                      <div class="lunch-cal__header">
+                        <button @click="lPrevMonth" :disabled="!lCanPrevMonth" class="lunch-cal__nav"
+                                :class="!lCanPrevMonth && 'lunch-cal__nav--disabled'">
+                          <svg class="lunch-cal__nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                          </svg>
+                        </button>
+                        <span class="lunch-cal__month">{{ lCalYear }} 年 {{ lCalMonth }} 月</span>
+                        <button @click="lNextMonth" class="lunch-cal__nav">
+                          <svg class="lunch-cal__nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                          </svg>
                         </button>
                       </div>
-                    </div>
-                    <p class="text-xs text-hint-c mt-1">營業時段 {{ lPeriodsLabel }}</p>
-                    <p v-if="lPrepNote" class="text-xs text-orange-600 mt-1">⏱️ {{ lPrepNote }}</p>
-                    <p v-if="lErrors.time" class="lunch-error">{{ lErrors.time }}</p>
-                  </div>
-                  <div v-for="opt in lDietOptions" :key="opt.key" class="lunch-diet-row">
-                    <div class="lunch-diet-row__info">
-                      <span class="lunch-diet-row__icon">{{ opt.icon }}</span>
-                      <div>
-                        <div class="lunch-diet-row__label">{{ opt.label }}</div>
-                        <div class="lunch-diet-row__desc">{{ opt.desc }}</div>
+                      <div class="lunch-cal__weekdays">
+                        <div v-for="w in ['日','一','二','三','四','五','六']" :key="w">{{ w }}</div>
+                      </div>
+                      <div class="lunch-cal__grid">
+                        <div
+                                v-for="(day, idx) in lCalDays" :key="idx"
+                                class="lunch-cal__day"
+                                :class="lDayClass(day)"
+                                :title="day.note"
+                                @click="day.date && !day.disabled && lSelectDate(day.date)"
+                        >{{ day.label }}
+                        </div>
                       </div>
                     </div>
-                    <div class="lunch-counter">
-                      <button @click="lForm[opt.key] = Math.max(0, lForm[opt.key] - 1)" class="lunch-counter__btn">−
-                      </button>
-                      <input v-model.number="lForm[opt.key]" type="number" min="0" class="lunch-counter__input"/>
-                      <button @click="lForm[opt.key]++" class="lunch-counter__btn">＋</button>
+                    <p class="lunch-cal-legend">
+                      <span class="lunch-cal-legend__swatch"/> 公休 / 未開放
+                    </p>
+                    <div v-if="lForm.date" class="lunch-selected">
+                      已選擇：{{ lForm.date }}
+                    </div>
+                    <p v-if="lErrors.date" class="lunch-error">{{ lErrors.date }}</p>
+                  </div>
+
+                  <!-- Step 1：填寫資料 -->
+                  <div v-if="lStep === 1" class="lunch-form">
+                    <h2 class="lunch-title">填寫資料</h2>
+                    <div class="lunch-field">
+                      <label class="lunch-label">姓名 <span class="lunch-required">*</span></label>
+                      <input v-model="lForm.name" placeholder="請輸入姓名" class="lunch-input"
+                             :class="lErrors.name && 'lunch-input--error'"/>
+                      <p v-if="lErrors.name" class="lunch-error">{{ lErrors.name }}</p>
+                    </div>
+                    <div class="lunch-field">
+                      <label class="lunch-label">聯絡電話 <span class="lunch-required">*</span></label>
+                      <input v-model="lForm.phone" type="tel" placeholder="09xx-xxx-xxx 或 02-xxxxxxxx"
+                             class="lunch-input" :class="lErrors.phone && 'lunch-input--error'"/>
+                      <p v-if="lErrors.phone" class="lunch-error">{{ lErrors.phone }}</p>
+                    </div>
+                    <div class="lunch-field">
+                      <label class="lunch-label">取餐時間</label>
+                      <select v-model="lForm.time" class="lunch-input">
+                        <option v-for="t in lTimeSlots" :key="t" :value="t">{{ t }}</option>
+                      </select>
+                    </div>
+                    <div v-for="opt in lDietOptions" :key="opt.key" class="lunch-diet-row">
+                      <div class="lunch-diet-row__info">
+                        <span class="lunch-diet-row__icon">{{ opt.icon }}</span>
+                        <div>
+                          <div class="lunch-diet-row__label">{{ opt.label }}</div>
+                          <div class="lunch-diet-row__desc">{{ opt.desc }}</div>
+                        </div>
+                      </div>
+                      <div class="lunch-counter">
+                        <button @click="lForm[opt.key] = Math.max(0, lForm[opt.key] - 1)" class="lunch-counter__btn">−
+                        </button>
+                        <input v-model.number="lForm[opt.key]" type="number" min="0" class="lunch-counter__input"/>
+                        <button @click="lForm[opt.key]++" class="lunch-counter__btn">＋</button>
+                      </div>
+                    </div>
+                    <p v-if="lErrors.qty" class="lunch-error">{{ lErrors.qty }}</p>
+                    <div v-if="lTotalQty > 0" class="lunch-qty-summary">
+                      共 <strong>{{ lTotalQty }}</strong> 盒
+                    </div>
+                    <div class="lunch-field">
+                      <label class="lunch-label">備註</label>
+                      <textarea v-model="lForm.note" rows="2" placeholder="特殊需求…" class="lunch-input lunch-textarea"/>
                     </div>
                   </div>
-                  <p v-if="lErrors.qty" class="lunch-error">{{ lErrors.qty }}</p>
-                  <div v-if="lTotalQty > 0" class="lunch-qty-summary">
-                    共 <strong>{{ lTotalQty }}</strong> 盒
-                  </div>
-                  <div class="lunch-field">
-                    <label class="lunch-label">備註</label>
-                    <textarea v-model="lForm.note" rows="2" placeholder="特殊需求…" class="lunch-input lunch-textarea"/>
-                  </div>
-                </div>
 
-                <!-- Step 2：確認送出 -->
-                <div v-if="lStep === 2">
-                  <h2 class="lunch-title">確認預訂內容</h2>
-                  <div class="lunch-summary">
-                    <div v-for="row in lSummary" :key="row.label" class="lunch-summary__row">
-                      <span class="lunch-summary__label">{{ row.label }}</span>
-                      <span class="lunch-summary__value">{{ row.value }}</span>
+                  <!-- Step 2：確認送出 -->
+                  <div v-if="lStep === 2">
+                    <h2 class="lunch-title">確認預訂內容</h2>
+                    <div class="lunch-summary">
+                      <div v-for="row in lSummary" :key="row.label" class="lunch-summary__row">
+                        <span class="lunch-summary__label">{{ row.label }}</span>
+                        <span class="lunch-summary__value">{{ row.value }}</span>
+                      </div>
                     </div>
+                    <p v-if="lSubmitError" class="lunch-submit-error">{{ lSubmitError }}</p>
                   </div>
-                  <p v-if="lSubmitError" class="lunch-submit-error">{{ lSubmitError }}</p>
-                </div>
 
-                <!-- 導覽按鈕 -->
-                <div class="lunch-nav">
-                  <button v-if="lStep > 0" @click="lStep--" class="lunch-btn lunch-btn--back">
-                    <svg class="lunch-btn__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                    </svg>
-                    上一步
-                  </button>
-                  <div v-else/>
-                  <button v-if="lStep < lSteps.length - 1" @click="lNextStep" class="lunch-btn lunch-btn--next">
-                    下一步
-                    <svg class="lunch-btn__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                  </button>
-                  <button v-else @click="lSubmit" :disabled="lSubmitting" class="lunch-btn lunch-btn--submit">
-                    <div v-if="lSubmitting" class="lunch-btn__spinner"/>
-                    {{ lSubmitting ? '送出中…' : '確認預訂' }}
-                  </button>
-                </div>
+                  <!-- 導覽按鈕 -->
+                  <div class="lunch-nav">
+                    <button v-if="lStep > 0" @click="lStep--" class="lunch-btn lunch-btn--back">
+                      <svg class="lunch-btn__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                      </svg>
+                      上一步
+                    </button>
+                    <div v-else/>
+                    <button v-if="lStep < lSteps.length - 1" @click="lNextStep" class="lunch-btn lunch-btn--next">
+                      下一步
+                      <svg class="lunch-btn__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                      </svg>
+                    </button>
+                    <button v-else @click="lSubmit" :disabled="lSubmitting" class="lunch-btn lunch-btn--submit">
+                      <div v-if="lSubmitting" class="lunch-btn__spinner"/>
+                      {{ lSubmitting ? '送出中…' : '確認預訂' }}
+                    </button>
+                  </div>
+                </template>
 
                 <!-- 注意事項 -->
                 <div class="lunch-notice">
@@ -593,664 +573,658 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* ── 步驟列 ── */
-.lunch-steps {
-  display: flex;
-  border-bottom: 1px solid #e5e0d8;
-  margin-bottom: 24px;
-}
+  /* ── 登入門檻 ── */
+  .lunch-auth-loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: #999;
+    font-size: 14px;
+  }
+  .lunch-auth-gate {
+    text-align: center;
+    padding: 40px 20px 32px;
+  }
+  .lunch-auth-gate__icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+  }
+  .lunch-auth-gate__title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #333;
+    margin: 0 0 10px;
+  }
+  .lunch-auth-gate__hint {
+    font-size: 13px;
+    color: #777;
+    line-height: 1.7;
+    margin: 0 0 22px;
+  }
+  .lunch-auth-gate__google {
+    display: flex;
+    justify-content: center;
+  }
 
-.lunch-step {
-  flex: 1;
-  padding: 12px 4px;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 500;
-  position: relative;
-}
+  /* ── 步驟列 ── */
+  .lunch-steps {
+    display: flex;
+    border-bottom: 1px solid #e5e0d8;
+    margin-bottom: 24px;
+  }
 
-.lunch-step--active {
-  color: #b45309;
-  background-color: #fffbeb;
-}
+  .lunch-step {
+    flex: 1;
+    padding: 12px 4px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    position: relative;
+  }
 
-.lunch-step--done {
-  color: #b45309;
-}
+  .lunch-step--active {
+    color: #b45309;
+    background-color: #fffbeb;
+  }
 
-.lunch-step--pending {
-  color: #ccc;
-}
+  .lunch-step--done {
+    color: #b45309;
+  }
 
-.lunch-step__inner {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
+  .lunch-step--pending {
+    color: #ccc;
+  }
 
-.lunch-step__check {
-  width: 16px;
-  height: 16px;
-  color: #d97706;
-}
+  .lunch-step__inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
 
-.lunch-step__num {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 1.5px solid #ccc;
-  font-size: 11px;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #ccc;
-}
+  .lunch-step__check {
+    width: 16px;
+    height: 16px;
+    color: #d97706;
+  }
 
-.lunch-step__num--active {
-  background-color: #d97706;
-  border-color: #d97706;
-  color: #fff;
-}
+  .lunch-step__num {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1.5px solid #ccc;
+    font-size: 11px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #ccc;
+  }
 
-.lunch-step__bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background-color: #f59e0b;
-}
+  .lunch-step__num--active {
+    background-color: #d97706;
+    border-color: #d97706;
+    color: #fff;
+  }
 
-/* ── 共用 ── */
-.lunch-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #333;
-  margin-bottom: 16px;
-}
+  .lunch-step__bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: #f59e0b;
+  }
 
-.lunch-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+  /* ── 共用 ── */
+  .lunch-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 16px;
+  }
 
-.lunch-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+  .lunch-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
 
-.lunch-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #555;
-}
+  .lunch-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
 
-.lunch-required {
-  color: #e74c3c;
-}
+  .lunch-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+  }
 
-.lunch-input {
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 12px;
-  border: 1px solid #ddd;
-  font-size: 13px;
-  color: #333;
-  outline: none;
-  background: #fff;
-  transition: border-color 0.15s;
-}
+  .lunch-required {
+    color: #e74c3c;
+  }
 
-.lunch-input:focus {
-  border-color: #f59e0b;
-}
+  .lunch-input {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid #ddd;
+    font-size: 13px;
+    color: #333;
+    outline: none;
+    background: #fff;
+    transition: border-color 0.15s;
+  }
 
-.lunch-input--error {
-  border-color: #e74c3c;
-  background-color: #fff5f5;
-}
+  .lunch-input:focus {
+    border-color: #f59e0b;
+  }
 
-.lunch-textarea {
-  resize: none;
-}
+  .lunch-input--error {
+    border-color: #e74c3c;
+    background-color: #fff5f5;
+  }
 
-.lunch-error {
-  font-size: 12px;
-  color: #e74c3c;
-  margin: 2px 0 0;
-}
+  .lunch-textarea {
+    resize: none;
+  }
 
-/* ── 餐廳資訊卡 ── */
-.lunch-info-card       { background: #f8f7f4; border-radius: 16px; padding: 16px 18px; }
-.lunch-info-card__name { font-size: 16px; font-weight: 700; color: #333; margin: 0 0 4px; }
-.lunch-info-card__desc { font-size: 13px; color: #777; margin: 0 0 10px; }
-.lunch-info-card__rows { display: flex; flex-direction: column; gap: 6px; }
-.lunch-info-card__row {
-  font-size: 13px;
-  color: #f59e0b;
-  text-decoration: none;
-  width: fit-content;
-}
-.lunch-info-card__row:hover      { text-decoration: underline; }
-.lunch-info-card__row--static    { color: #777; cursor: default; }
-.lunch-info-card__row--static:hover { text-decoration: none; }
+  .lunch-error {
+    font-size: 12px;
+    color: #e74c3c;
+    margin: 2px 0 0;
+  }
 
-/* ── 取餐時段按鈕 ── */
-.lunch-time-group        { margin-bottom: 8px; }
-.lunch-time-group__label { font-size: 12px; font-weight: 700; color: #999; margin: 0 0 6px; }
-.lunch-time-slots        { display: flex; flex-wrap: wrap; gap: 8px; }
-.lunch-time-slot {
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid #e5e0d8;
-  background: #fff;
-  color: #444;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.lunch-time-slot:hover     { background-color: #fef3e2; color: #c2760a; }
-.lunch-time-slot--selected {
-  background-color: #f59e0b;
-  border-color: #f59e0b;
-  color: #fff;
-  box-shadow: 0 2px 6px rgba(245,158,11,0.35);
-}
+  /* ── 月曆 ── */
+  .lunch-cal {
+    background: #f8f7f4;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
 
-/* ── 月曆 ── */
-.lunch-cal {
-  background: #f8f7f4;
-  border-radius: 16px;
-  padding: 16px;
-  margin-bottom: 12px;
-}
+  .lunch-cal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
 
-.lunch-cal__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
+  .lunch-cal__month {
+    font-size: 13px;
+    font-weight: 700;
+    color: #333;
+  }
 
-.lunch-cal__month {
-  font-size: 13px;
-  font-weight: 700;
-  color: #333;
-}
+  .lunch-cal__nav {
+    padding: 6px;
+    border-radius: 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #666;
+    transition: background 0.15s;
+  }
 
-.lunch-cal__nav {
-  padding: 6px;
-  border-radius: 10px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #666;
-  transition: background 0.15s;
-}
+  .lunch-cal__nav:hover:not(:disabled) {
+    background: #e0e0e0;
+  }
 
-.lunch-cal__nav:hover:not(:disabled) {
-  background: #e0e0e0;
-}
+  .lunch-cal__nav--disabled {
+    color: #ccc;
+    cursor: not-allowed;
+  }
 
-.lunch-cal__nav--disabled {
-  color: #ccc;
-  cursor: not-allowed;
-}
+  .lunch-cal__nav-icon {
+    width: 16px;
+    height: 16px;
+    display: block;
+  }
 
-.lunch-cal__nav-icon {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
+  .lunch-cal__weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    margin-bottom: 4px;
+  }
 
-.lunch-cal__weekdays {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  margin-bottom: 4px;
-}
+  .lunch-cal__weekdays > div {
+    text-align: center;
+    font-size: 11px;
+    color: #aaa;
+    padding: 4px 0;
+  }
 
-.lunch-cal__weekdays > div {
-  text-align: center;
-  font-size: 11px;
-  color: #aaa;
-  padding: 4px 0;
-}
+  .lunch-cal__grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+  }
 
-.lunch-cal__grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-}
+  .lunch-cal__day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    font-size: 13px;
+    user-select: none;
+    transition: all 0.12s;
+  }
 
-.lunch-cal__day {
-  aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  font-size: 13px;
-  user-select: none;
-  transition: all 0.12s;
-}
+  /* ── 日曆圖例 ── */
+  .lunch-cal-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #999; margin: 0 0 6px 2px; }
+  .lunch-cal-legend__swatch {
+    display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+    background: repeating-linear-gradient(135deg, transparent, transparent 2px, #ccb9b9 2px, #ccb9b9 4px);
+    border: 1px solid #d1cdc8;
+  }
 
-/* ── 日曆圖例 ── */
-.lunch-cal-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #999; margin: 0 0 6px 2px; }
-.lunch-cal-legend__swatch {
-  display: inline-block; width: 10px; height: 10px; border-radius: 3px;
-  background: repeating-linear-gradient(135deg, transparent, transparent 2px, #ccb9b9 2px, #ccb9b9 4px);
-  border: 1px solid #d1cdc8;
-}
+  /* ── 已選日期 ── */
+  .lunch-selected {
+    background-color: #fffbeb;
+    color: #b45309;
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
 
-/* ── 已選日期 ── */
-.lunch-selected {
-  background-color: #fffbeb;
-  color: #b45309;
-  border-radius: 12px;
-  padding: 10px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 6px;
-}
-
-/* ── 便當計數列 ── */
-.lunch-diet-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #fff;
-  border: 1px solid #eee;
-  border-radius: 14px;
-  padding: 14px 16px;
-  gap: 12px;
-}
-
-.lunch-diet-row__info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-}
-
-.lunch-diet-row__icon {
-  font-size: 22px;
-  flex-shrink: 0;
-}
-
-.lunch-diet-row__label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #333;
-}
-
-.lunch-diet-row__desc {
-  font-size: 11px;
-  color: #aaa;
-  margin-top: 2px;
-}
-
-/* ── 手機版計數列調整 ── */
-@media (max-width: 480px) {
+  /* ── 便當計數列 ── */
   .lunch-diet-row {
-    padding: 12px 14px;
-    gap: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #fff;
+    border: 1px solid #eee;
+    border-radius: 14px;
+    padding: 14px 16px;
+    gap: 12px;
   }
 
   .lunch-diet-row__info {
-    gap: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
   }
 
   .lunch-diet-row__icon {
-    font-size: 20px;
-  }
-
-  .lunch-diet-row__label {
-    white-space: nowrap;
-  }
-
-  .lunch-counter {
-    gap: 4px;
+    font-size: 22px;
     flex-shrink: 0;
   }
 
+  .lunch-diet-row__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+  }
+
+  .lunch-diet-row__desc {
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 2px;
+  }
+
+  /* ── 手機版計數列調整 ── */
+  @media (max-width: 480px) {
+    .lunch-diet-row {
+      padding: 12px 14px;
+      gap: 8px;
+    }
+
+    .lunch-diet-row__info {
+      gap: 10px;
+    }
+
+    .lunch-diet-row__icon {
+      font-size: 20px;
+    }
+
+    .lunch-diet-row__label {
+      white-space: nowrap;
+    }
+
+    .lunch-counter {
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .lunch-counter__btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+    }
+
+    .lunch-counter__input {
+      flex: none;
+      width: 48px;
+      padding: 6px 2px;
+      border-radius: 8px;
+    }
+  }
+
+  /* ── 計數器 ── */
+  .lunch-counter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   .lunch-counter__btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+    background: #fff;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.12s;
+  }
+
+  .lunch-counter__btn:hover {
+    background: #f5f5f5;
   }
 
   .lunch-counter__input {
-    flex: none;
-    width: 48px;
-    padding: 6px 2px;
-    border-radius: 8px;
+    flex: 1;
+    text-align: center;
+    padding: 8px 4px;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+    font-size: 13px;
+    font-weight: 700;
+    color: #333;
+    outline: none;
   }
-}
 
-/* ── 計數器 ── */
-.lunch-counter {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.lunch-counter__btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid #ddd;
-  background: #fff;
-  font-size: 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: background 0.12s;
-}
-
-.lunch-counter__btn:hover {
-  background: #f5f5f5;
-}
-
-.lunch-counter__input {
-  flex: 1;
-  text-align: center;
-  padding: 8px 4px;
-  border-radius: 10px;
-  border: 1px solid #ddd;
-  font-size: 13px;
-  font-weight: 700;
-  color: #333;
-  outline: none;
-}
-
-/* ── 數量小計 ── */
-.lunch-qty-summary {
-  background: #fffbeb;
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-size: 13px;
-  color: #555;
-}
-
-/* ── 確認摘要 ── */
-.lunch-summary {
-  border: 1px solid #eee;
-  border-radius: 14px;
-  overflow: hidden;
-  margin-bottom: 12px;
-}
-
-.lunch-summary__row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f5f5f5;
-  font-size: 13px;
-}
-
-.lunch-summary__row:last-child {
-  border-bottom: none;
-}
-
-.lunch-summary__label {
-  color: #aaa;
-}
-
-.lunch-summary__value {
-  font-weight: 600;
-  color: #333;
-}
-
-.lunch-submit-error {
-  font-size: 13px;
-  color: #e74c3c;
-  background: #fff5f5;
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin-bottom: 8px;
-}
-
-/* ── 導覽按鈕 ── */
-.lunch-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid #eee;
-}
-
-.lunch-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 20px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.15s;
-  border: none;
-}
-
-.lunch-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.lunch-btn__icon {
-  width: 16px;
-  height: 16px;
-}
-
-.lunch-btn__spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #fff;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+  /* ── 數量小計 ── */
+  .lunch-qty-summary {
+    background: #fffbeb;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #555;
   }
-}
 
-.lunch-btn--back {
-  background: #fff;
-  border: 1px solid #ddd;
-  color: #666;
-  margin-right: auto;
-}
+  /* ── 確認摘要 ── */
+  .lunch-summary {
+    border: 1px solid #eee;
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
 
-.lunch-btn--back:hover {
-  background: #f5f5f5;
-}
+  .lunch-summary__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #f5f5f5;
+    font-size: 13px;
+  }
 
-.lunch-btn--next {
-  background-color: #d97706;
-  color: #fff;
-  margin-left: auto;
-}
+  .lunch-summary__row:last-child {
+    border-bottom: none;
+  }
 
-.lunch-btn--next:hover {
-  opacity: 0.88;
-}
+  .lunch-summary__label {
+    color: #aaa;
+  }
 
-.lunch-btn--submit {
-  background-color: #d97706;
-  color: #fff;
-  margin-left: auto;
-}
+  .lunch-summary__value {
+    font-weight: 600;
+    color: #333;
+  }
 
-.lunch-btn--submit:hover:not(:disabled) {
-  opacity: 0.88;
-}
+  .lunch-submit-error {
+    font-size: 13px;
+    color: #e74c3c;
+    background: #fff5f5;
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+  }
 
-/* ── 注意事項 ── */
-.lunch-notice {
-  margin-top: 16px;
-  border-radius: 14px;
-  padding: 14px 16px;
-  font-size: 13px;
-  line-height: 1.8;
-  background-color: #fffbeb;
-  color: #b45309;
-}
+  /* ── 導覽按鈕 ── */
+  .lunch-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid #eee;
+  }
 
-.lunch-notice__title {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
+  .lunch-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    border: none;
+  }
 
-/* ── 日期狀態 ── */
-.lunch-cal__day--empty {
-  cursor: default;
-}
+  .lunch-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
-.lunch-cal__day--disabled {
-  color: #d1cdc8;
-  cursor: not-allowed;
-  background: none;
-}
+  .lunch-btn__icon {
+    width: 16px;
+    height: 16px;
+  }
 
-.lunch-cal__day--closed {
-  color: #ccb9b9;
-  cursor: not-allowed;
-  background: repeating-linear-gradient(135deg, transparent, transparent 4px, #f3e9e9 4px, #f3e9e9 8px);
-  text-decoration: line-through;
-}
+  .lunch-btn__spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #fff;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
 
-.lunch-cal__day--selected {
-  background-color: #d97706;
-  color: #fff;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.35);
-}
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 
-.lunch-cal__day--available {
-  color: #444;
-  cursor: pointer;
-}
+  .lunch-btn--back {
+    background: #fff;
+    border: 1px solid #ddd;
+    color: #666;
+    margin-right: auto;
+  }
 
-.lunch-cal__day--available:hover {
-  background-color: #fde9c0;
-  color: #92400e;
-}
+  .lunch-btn--back:hover {
+    background: #f5f5f5;
+  }
 
-/* ── number input arrow 隱藏 ── */
-input[type=number]::-webkit-inner-spin-button,
-input[type=number]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
+  .lunch-btn--next {
+    background-color: #d97706;
+    color: #fff;
+    margin-left: auto;
+  }
 
-input[type=number] {
-  -moz-appearance: textfield;
-}
+  .lunch-btn--next:hover {
+    opacity: 0.88;
+  }
 
-/* ── 預訂成功 Modal ── */
-.lmodal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  padding: 20px;
-}
+  .lunch-btn--submit {
+    background-color: #d97706;
+    color: #fff;
+    margin-left: auto;
+  }
 
-.lmodal {
-  background: #fff;
-  border-radius: 20px;
-  padding: 36px 28px 28px;
-  max-width: 340px;
-  width: 100%;
-  text-align: center;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-}
+  .lunch-btn--submit:hover:not(:disabled) {
+    opacity: 0.88;
+  }
 
-.lmodal__icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: #fffbeb;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 16px;
-}
+  /* ── 注意事項 ── */
+  .lunch-notice {
+    margin-top: 16px;
+    border-radius: 14px;
+    padding: 14px 16px;
+    font-size: 13px;
+    line-height: 1.8;
+    background-color: #fffbeb;
+    color: #b45309;
+  }
 
-.lmodal__icon svg {
-  width: 28px;
-  height: 28px;
-  stroke: #d97706;
-}
+  .lunch-notice__title {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
 
-.lmodal__title {
-  font-size: 17px;
-  font-weight: 700;
-  color: #333;
-  margin: 0 0 10px;
-}
+  /* ── 日期狀態 ── */
+  .lunch-cal__day--empty {
+    cursor: default;
+  }
 
-.lmodal__msg {
-  font-size: 13px;
-  color: #666;
-  line-height: 1.7;
-  margin: 0 0 24px;
-}
+  .lunch-cal__day--disabled {
+    color: #d1cdc8;
+    cursor: not-allowed;
+    background: none;
+  }
 
-.lmodal__btn {
-  display: block;
-  width: 100%;
-  padding: 12px;
-  border-radius: 12px;
-  border: none;
-  background: #d97706;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.15s;
-  text-align: center;
-}
+  .lunch-cal__day--closed {
+    color: #ccb9b9;
+    cursor: not-allowed;
+    background: repeating-linear-gradient(135deg, transparent, transparent 4px, #f3e9e9 4px, #f3e9e9 8px);
+    text-decoration: line-through;
+  }
 
-.lmodal__btn:hover {
-  opacity: 0.88;
-}
+  .lunch-cal__day--selected {
+    background-color: #d97706;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(217, 119, 6, 0.35);
+  }
 
-/* ── Modal 動畫 ── */
-.lmodal-enter-active,
-.lmodal-leave-active {
-  transition: opacity 0.2s ease;
-}
+  .lunch-cal__day--available {
+    color: #444;
+    cursor: pointer;
+  }
 
-.lmodal-enter-active .lmodal,
-.lmodal-leave-active .lmodal {
-  transition: transform 0.2s ease, opacity 0.2s ease;
-}
+  .lunch-cal__day--available:hover {
+    background-color: #fde9c0;
+    color: #92400e;
+  }
 
-.lmodal-enter-from,
-.lmodal-leave-to {
-  opacity: 0;
-}
+  /* ── number input arrow 隱藏 ── */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
 
-.lmodal-enter-from .lmodal,
-.lmodal-leave-to .lmodal {
-  transform: scale(0.92) translateY(12px);
-  opacity: 0;
-}
+  input[type=number] {
+    -moz-appearance: textfield;
+  }
+
+  /* ── 預訂成功 Modal ── */
+  .lmodal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+  }
+
+  .lmodal {
+    background: #fff;
+    border-radius: 20px;
+    padding: 36px 28px 28px;
+    max-width: 340px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  }
+
+  .lmodal__icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #fffbeb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+  }
+
+  .lmodal__icon svg {
+    width: 28px;
+    height: 28px;
+    stroke: #d97706;
+  }
+
+  .lmodal__title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #333;
+    margin: 0 0 10px;
+  }
+
+  .lmodal__msg {
+    font-size: 13px;
+    color: #666;
+    line-height: 1.7;
+    margin: 0 0 24px;
+  }
+
+  .lmodal__btn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    border-radius: 12px;
+    border: none;
+    background: #d97706;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    text-align: center;
+  }
+
+  .lmodal__btn:hover {
+    opacity: 0.88;
+  }
+
+  /* ── Modal 動畫 ── */
+  .lmodal-enter-active,
+  .lmodal-leave-active {
+    transition: opacity 0.2s ease;
+  }
+
+  .lmodal-enter-active .lmodal,
+  .lmodal-leave-active .lmodal {
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+
+  .lmodal-enter-from,
+  .lmodal-leave-to {
+    opacity: 0;
+  }
+
+  .lmodal-enter-from .lmodal,
+  .lmodal-leave-to .lmodal {
+    transform: scale(0.92) translateY(12px);
+    opacity: 0;
+  }
 </style>
