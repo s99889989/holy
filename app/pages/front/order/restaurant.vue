@@ -18,6 +18,7 @@ const BOOKING_BASE = computed(() => commonStore.data.main_url + '/holy/booking')
 // 營業時間設定跟便當訂購共用同一份（RestaurantHoursController），不是訂位獨立一份
 const HOURS_BASE = computed(() => commonStore.data.main_url + '/holy/restaurant/hours')
 const NOTICE_BASE = computed(() => `${BOOKING_BASE.value}/notice`)
+const TIMESLOT_BASE = computed(() => `${BOOKING_BASE.value}/timeslot`)
 
 // 注意事項可能撈不到（例如剛部署、API 還沒起來），先給一份跟後端預設值一致的保底文字，
 // 避免頁面一開始空白一塊；撈到之後會被 fetchNotice() 蓋掉
@@ -159,6 +160,7 @@ const fetchBookingSettings = async () => {
 const bIsBookable = (dateStr) => {
   if (bSettings.closedDates[dateStr] !== undefined) return false
   if (bSettings.openDates[dateStr] !== undefined) return true
+  if (dateStr === bTodayStr && bTodayFullyPassed.value) return false
   const dow = new Date(dateStr).getDay()
   return bSettings.openWeekdays.includes(dow)
 }
@@ -170,8 +172,22 @@ const bDayNote = (dateStr) => {
   if (bSettings.openDates[dateStr] !== undefined) {
     return bSettings.openDates[dateStr] || '本日臨時開放訂位'
   }
+  if (dateStr === bTodayStr && bTodayFullyPassed.value) return '今日可訂位時段已截止，請選擇其他日期或直接來電洽詢'
   if (!bSettings.openWeekdays.includes(new Date(dateStr).getDay())) return '餐廳今日公休，如有需要請來電洽詢'
   return ''
+}
+// 從某天（不含當天）往後找最近一個可訂位的日期，找不到（例如連續公休超過 maxDays 天）回傳 null。
+// 只依「公休/營業日設定」判斷，不含個別日期實際有沒有開放時段——那要等 bSelectDate 撈完
+// 該日的到場時間才知道，這裡只負責跳過明顯不可能的日子（公休日、今天已截止）
+const bFindNextBookableDate = (fromDateStr, maxDays = 60) => {
+  const d = new Date(fromDateStr)
+  for (let i = 1; i <= maxDays; i++) {
+    d.setDate(d.getDate() + 1)
+    const mm = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0')
+    const str = `${d.getFullYear()}-${mm}-${dd}`
+    if (bIsBookable(str)) return str
+  }
+  return null
 }
 
 // ── 電話驗證 ─────────────────────────────────────────────────────
@@ -193,14 +209,74 @@ const validateTWPhone = (val) => {
 }
 
 // ── 步驟 ─────────────────────────────────────────────────────────
+// 目前時刻 "HH:mm"，用來過濾「選today」時已經過去的用餐時段（防止例如現在已經下午，
+// 還能選中午 12:00 的時段）；每分鐘更新一次，避免使用者長時間停留在同一頁面導致判斷過期
+const bNowHM = ref(`${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`)
+let bNowTimer = null
 const bStep = ref(0)
 const bSteps = ['選擇日期', '填寫資料', '確認送出']
-const bForm = reactive({ name: '', phone: '', date: bTodayStr, time: '12:00', note: '',
+const bForm = reactive({ name: '', phone: '', date: bTodayStr, time: '', note: '',
   meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0 })
 const bErrors = reactive({})
 const bSubmitting = ref(false)
 const bSubmitError = ref('')
-const bTimeSlots = ['11:00', '11:10', '11:20', '11:30', '11:40', '11:50', '12:00', '12:10', '12:20', '12:30', '12:40', '12:50', '13:00']
+
+// ── 到場時間（跟後台「訂位到場時間設定」RestaurantTimeSlotController 同一份資料）─────
+// 完全沒設定過任何時段時，後端 isTimeBookable() 視為不限制，但 /slots 端點會回傳空陣列，
+// 前端這裡要自己補一組保底時段，不然客人會選不到任何時間
+const bTimeSlotsFallback = ['11:00', '11:10', '11:20', '11:30', '11:40', '11:50', '12:00', '12:10', '12:20', '12:30', '12:40', '12:50', '13:00']
+// 是否曾經設定過任何到場時間（用 /list 撈一次判斷），用來分辨「/slots 回空陣列」到底是
+// 「完全沒設定過，視為不限制」還是「有設定，但這天真的沒有開放任何時段」
+const bTimeSlotSettingsExist = ref(false)
+const fetchTimeSlotSettingsExist = async () => {
+  try {
+    const list = await (await fetch(`${TIMESLOT_BASE.value}/list`)).json()
+    bTimeSlotSettingsExist.value = Array.isArray(list) && list.length > 0
+  } catch { bTimeSlotSettingsExist.value = false }
+}
+// 把 /slots 端點回傳的分組資料（多個時段各自的 slots 陣列）攤平成單一、去重、排序後的時間清單；
+// 回傳空陣列時，依上面的判斷決定要不要退回保底時段
+const flattenSlots = (groups) => {
+  const flat = (groups || []).flatMap(g => g.slots || [])
+  const uniqSorted = [...new Set(flat)].sort()
+  if (uniqSorted.length > 0) return uniqSorted
+  return bTimeSlotSettingsExist.value ? [] : bTimeSlotsFallback
+}
+// 目前選取日期的原始可選時段（尚未套用「今天已過去」的過濾）
+const bRawTimeSlots = ref(bTimeSlotsFallback)
+const bTimeSlotsLoading = ref(false)
+const fetchTimeSlots = async (date) => {
+  bTimeSlotsLoading.value = true
+  try {
+    const groups = await (await fetch(`${TIMESLOT_BASE.value}/slots?date=${date}`)).json()
+    bRawTimeSlots.value = flattenSlots(groups)
+  } catch { bRawTimeSlots.value = bTimeSlotsFallback } finally { bTimeSlotsLoading.value = false }
+}
+// 「今天」的原始時段（跟目前選的日期無關，只用來判斷日曆上今天這一格要不要標成不可訂），
+// 進頁面時抓一次就好，不會隨使用者切換日曆月份而改變
+const bTodayRawSlots = ref([])
+const bTodayRawSlotsLoaded = ref(false)
+const fetchTodayRawSlots = async () => {
+  try {
+    const groups = await (await fetch(`${TIMESLOT_BASE.value}/slots?date=${bTodayStr}`)).json()
+    bTodayRawSlots.value = flattenSlots(groups)
+  } catch { bTodayRawSlots.value = bTimeSlotsFallback } finally { bTodayRawSlotsLoaded.value = true }
+}
+// 「今天」還沒過去的時段
+const bTodayAvailableSlots = computed(() => bTodayRawSlots.value.filter(t => t > bNowHM.value))
+// 今天是否所有時段都已經截止（要等 bTodayRawSlots 撈完才判斷，避免撈取中先閃一次「已截止」）
+const bTodayFullyPassed = computed(() =>
+    bTodayRawSlotsLoaded.value && bTodayRawSlots.value.length > 0 && bTodayAvailableSlots.value.length === 0
+)
+// 選的日期若是「今天」，只留下還沒過去的時段；選其他日期則不受限制
+const bAvailableTimeSlots = computed(() =>
+    bForm.date === bTodayStr ? bRawTimeSlots.value.filter(t => t > bNowHM.value) : bRawTimeSlots.value
+)
+// 選擇日期這一步是否可以按「下一步」：日期本身要可訂、當天要真的有撈到至少一個時段、
+// 而且時段還在讀取中也先擋著（避免搶在 fetchTimeSlots 判斷出「這天其實沒有時段」之前就放行）
+const bDateStepValid = computed(() =>
+    !!bForm.date && bIsBookable(bForm.date) && !bTimeSlotsLoading.value && bRawTimeSlots.value.length > 0
+)
 const bDietOptions = [
   { key: 'meatQty', icon: '🍖', label: '葷食', desc: '含肉類料理' },
   { key: 'fullVegQty', icon: '🌿', label: '全素', desc: '不含蛋奶五辛' },
@@ -263,6 +339,13 @@ const bSelectDate = async (date) => {
     return
   }
   delete bErrors.date
+  await fetchTimeSlots(date)
+  // 日期本身有開放（公休/營業日檢查都過了），但這天實際上沒有設定任何到場時間
+  // （例如只設了臨時時段給別的日子，這天沒有預設時段可用）：一樣視為不可訂
+  if (bRawTimeSlots.value.length === 0) {
+    bErrors.date = '該日期尚未開放任何用餐時段，請洽詢門市或選擇其他日期'
+    return
+  }
   bDateGuestsLoading.value = true
   try {
     const data = await (await fetch(`${BOOKING_BASE.value}/get/${date}`)).json()
@@ -297,6 +380,10 @@ const bNextStep = () => {
     if (!bForm.phone.trim()) bErrors.phone = '請輸入聯絡電話'
     else if (!validateTWPhone(bForm.phone)) bErrors.phone = '請輸入正確的手機（09xxxxxxxx）或市話（如 02-12345678、07-1234567）'
     if (bTotalGuests.value === 0) bErrors.diet = '請至少選擇一份餐點'
+    // 防呆：使用者可能在這頁停留很久，選的時間可能在填資料的期間變成過去式
+    if (bForm.date === bTodayStr && !bAvailableTimeSlots.value.includes(bForm.time)) {
+      bErrors.time = '所選時間已過，請重新選擇用餐時間'
+    }
     if (Object.keys(bErrors).length > 0) return
   }
   bStep.value++
@@ -314,7 +401,7 @@ const bSubmit = async () => {
     const text = await res.text()
     // 後端遇到不可訂位日期等情況會回傳「錯誤：…」文字（HTTP 狀態仍是 200），需另外判斷
     if (text.startsWith('錯誤')) { bSubmitError.value = text; return }
-    Object.assign(bForm, { name: '', phone: '', date: '', time: '12:00', note: '',
+    Object.assign(bForm, { name: '', phone: '', date: '', time: '', note: '',
       meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0 })
     bStep.value = 0
     bShowSuccessModal.value = true
@@ -345,10 +432,38 @@ onMounted(async () => {
           : 'none'
     }
   }
-  fetchBookingSettings()
   fetchNotice()
-  bSelectDate(bTodayStr)
+  // 這三個都要 await：bSettings（公休/營業日）、有沒有設定過到場時間、今天的原始時段，
+  // 都是「今天算不算可訂」「要不要自動跳下一個可訂日期」判斷的依據，缺一都可能誤判
+  await fetchBookingSettings()
+  await fetchTimeSlotSettingsExist()
+  await fetchTodayRawSlots()
+
+  // 今天已經不可訂位（例如時段全部過去、或今天剛好公休）時，直接預設跳到下一個可訂日期，
+  // 不要讓使用者停在一個明顯不能選的日期上還要自己往後翻日曆
+  const initialDate = bIsBookable(bTodayStr) ? bTodayStr : (bFindNextBookableDate(bTodayStr) || bTodayStr)
+  if (initialDate !== bTodayStr) {
+    // 跳到下個月甚至更後面時，日曆也要跟著翻到那個月份
+    const [y, m] = initialDate.split('-')
+    bCalYear.value = Number(y)
+    bCalMonth.value = Number(m)
+  }
+  bSelectDate(initialDate)
+
+  // 每分鐘更新一次目前時刻，讓「今天已過去的時段」判斷不會因為使用者長時間停留而過期
+  bNowTimer = setInterval(() => {
+    bNowHM.value = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`
+  }, 60000)
 })
+
+onUnmounted(() => {
+  if (bNowTimer) clearInterval(bNowTimer)
+})
+
+// 選的時間若不在（新的）可選清單裡——包含「選了今天但時間後來過去了」——自動帶到第一個可選時段
+watch(bAvailableTimeSlots, (slots) => {
+  if (!slots.includes(bForm.time)) bForm.time = slots[0] || ''
+}, { immediate: true })
 
 // 訪客在此頁登入成功後，隱藏登入畫面、改顯示訂位表單（Google 按鈕只會在未登入時渲染一次，這裡不需再呼叫 setupGoogleLogin）
 watch(isLoggedIn, (loggedIn) => {
@@ -591,13 +706,19 @@ watch(isLoggedIn, (loggedIn) => {
                           class="booking-input"
                       >
                         <option
-                            v-for="t in bTimeSlots"
+                            v-for="t in bAvailableTimeSlots"
                             :key="t"
                             :value="t"
                         >
                           {{ t }}
                         </option>
                       </select>
+                      <p
+                          v-if="bErrors.time"
+                          class="booking-error"
+                      >
+                        {{ bErrors.time }}
+                      </p>
                     </div>
                     <div class="booking-field">
                       <label class="booking-label">備註</label>
@@ -709,6 +830,7 @@ watch(isLoggedIn, (loggedIn) => {
                     <div v-else />
                     <button
                         v-if="bStep < bSteps.length - 1"
+                        :disabled="bStep === 0 && !bDateStepValid"
                         class="booking-btn booking-btn--next"
                         @click="bNextStep"
                     >

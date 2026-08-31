@@ -17,6 +17,7 @@ const customerStore = useCustomerStore()
 const LUNCH_BASE = computed(() => commonStore.data.main_url + '/holy/lunch')
 const HOURS_BASE = computed(() => commonStore.data.main_url + '/holy/restaurant/hours')
 const NOTICE_BASE = computed(() => `${LUNCH_BASE.value}/notice`)
+const TIMESLOT_BASE = computed(() => `${LUNCH_BASE.value}/timeslot`)
 
 // 須知可能撈不到（例如剛部署、API 還沒起來），先給一份跟後端預設值一致的保底文字，
 // 避免頁面一開始空白一塊；撈到之後會被 fetchNotice() 蓋掉
@@ -158,6 +159,7 @@ const fetchRestaurantHours = async () => {
 const lIsBookable = (dateStr) => {
   if (lSettings.closedDates[dateStr] !== undefined) return false
   if (lSettings.openDates[dateStr] !== undefined) return true
+  if (dateStr === lTodayStr && lTodayFullyPassed.value) return false
   const dow = new Date(dateStr).getDay()
   return lSettings.openWeekdays.includes(dow)
 }
@@ -169,8 +171,22 @@ const lDayNote = (dateStr) => {
   if (lSettings.openDates[dateStr] !== undefined) {
     return lSettings.openDates[dateStr] || '本日臨時開放訂購'
   }
+  if (dateStr === lTodayStr && lTodayFullyPassed.value) return '今日可取餐時段已截止，請選擇其他日期或直接來電洽詢'
   if (!lSettings.openWeekdays.includes(new Date(dateStr).getDay())) return '餐廳今日公休，如有需要請來電洽詢'
   return ''
+}
+// 從某天（不含當天）往後找最近一個可訂購的日期，找不到（例如連續公休超過 maxDays 天）回傳 null。
+// 只依「公休/營業日設定」判斷，不含個別日期實際有沒有開放時段——那要等 lSelectDate 撈完
+// 該日的取餐時間才知道，這裡只負責跳過明顯不可能的日子（公休日、今天已截止）
+const lFindNextBookableDate = (fromDateStr, maxDays = 60) => {
+  const d = new Date(fromDateStr)
+  for (let i = 1; i <= maxDays; i++) {
+    d.setDate(d.getDate() + 1)
+    const mm = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0')
+    const str = `${d.getFullYear()}-${mm}-${dd}`
+    if (lIsBookable(str)) return str
+  }
+  return null
 }
 
 // ── 電話驗證 ─────────────────────────────────────────────────────
@@ -192,16 +208,79 @@ const validateTWPhone = (val) => {
 }
 
 // ── 步驟 ─────────────────────────────────────────────────────────
+// 目前時刻 "HH:mm"，用來過濾「選today」時已經過去的取餐時段（防止例如現在已經下午，
+// 還能選中午 12:00 的時段）；每分鐘更新一次，避免使用者長時間停留在同一頁面導致判斷過期
+const lNowHM = ref(`${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`)
+let lNowTimer = null
 const lStep = ref(0)
 const lSteps = ['選擇日期', '填寫資料', '確認送出']
 const lForm = reactive({
-  name: '', phone: '', date: lTodayStr, time: '12:00',
+  name: '', phone: '', date: lTodayStr, time: '',
   meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0, note: ''
 })
 const lErrors = reactive({})
 const lSubmitting = ref(false)
 const lSubmitError = ref('')
-const lTimeSlots = ['10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00']
+
+// ── 取餐時間（跟後台「便當取餐時間設定」BentoTimeSlotController 同一份資料）─────
+// 完全沒設定過任何時段時，後端 isTimeBookable() 視為不限制，但 /slots 端點會回傳空陣列，
+// 前端這裡要自己補一組保底時段，不然客人會選不到任何時間。
+// 後端 /slots 若當天有設定「準備時間」（prepMinutes），已經先把來不及準備的時段濾掉了；
+// 前端這裡另外再用 lNowHM 濾一次「已經過去的時間」，是補上準備時間設為 0 分鐘時
+// （後端這種情況不會擋已過去的時段）的保險，兩邊疊加才能保證選不到已經過去的時間。
+const lTimeSlotsFallback = ['10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00']
+// 是否曾經設定過任何取餐時間（用 /list 撈一次判斷），用來分辨「/slots 回空陣列」到底是
+// 「完全沒設定過，視為不限制」還是「有設定，但這天真的沒有開放任何時段」
+const lTimeSlotSettingsExist = ref(false)
+const fetchTimeSlotSettingsExist = async () => {
+  try {
+    const list = await (await fetch(`${TIMESLOT_BASE.value}/list`)).json()
+    lTimeSlotSettingsExist.value = Array.isArray(list) && list.length > 0
+  } catch { lTimeSlotSettingsExist.value = false }
+}
+// 把 /slots 端點回傳的分組資料（多個時段各自的 slots 陣列）攤平成單一、去重、排序後的時間清單；
+// 回傳空陣列時，依上面的判斷決定要不要退回保底時段
+const flattenSlots = (groups) => {
+  const flat = (groups || []).flatMap(g => g.slots || [])
+  const uniqSorted = [...new Set(flat)].sort()
+  if (uniqSorted.length > 0) return uniqSorted
+  return lTimeSlotSettingsExist.value ? [] : lTimeSlotsFallback
+}
+// 目前選取日期的原始可選時段（尚未套用「今天已過去」的過濾；prep 準備時間後端已經濾過了）
+const lRawTimeSlots = ref(lTimeSlotsFallback)
+const lTimeSlotsLoading = ref(false)
+const fetchTimeSlots = async (date) => {
+  lTimeSlotsLoading.value = true
+  try {
+    const groups = await (await fetch(`${TIMESLOT_BASE.value}/slots?date=${date}`)).json()
+    lRawTimeSlots.value = flattenSlots(groups)
+  } catch { lRawTimeSlots.value = lTimeSlotsFallback } finally { lTimeSlotsLoading.value = false }
+}
+// 「今天」的原始時段（跟目前選的日期無關，只用來判斷日曆上今天這一格要不要標成不可訂），
+// 進頁面時抓一次就好，不會隨使用者切換日曆月份而改變
+const lTodayRawSlots = ref([])
+const lTodayRawSlotsLoaded = ref(false)
+const fetchTodayRawSlots = async () => {
+  try {
+    const groups = await (await fetch(`${TIMESLOT_BASE.value}/slots?date=${lTodayStr}`)).json()
+    lTodayRawSlots.value = flattenSlots(groups)
+  } catch { lTodayRawSlots.value = lTimeSlotsFallback } finally { lTodayRawSlotsLoaded.value = true }
+}
+// 「今天」還沒過去的時段
+const lTodayAvailableSlots = computed(() => lTodayRawSlots.value.filter(t => t > lNowHM.value))
+// 今天是否所有時段都已經截止（要等 lTodayRawSlots 撈完才判斷，避免撈取中先閃一次「已截止」）
+const lTodayFullyPassed = computed(() =>
+    lTodayRawSlotsLoaded.value && lTodayRawSlots.value.length > 0 && lTodayAvailableSlots.value.length === 0
+)
+// 選的日期若是「今天」，只留下還沒過去的時段；選其他日期則不受限制
+const lAvailableTimeSlots = computed(() =>
+    lForm.date === lTodayStr ? lRawTimeSlots.value.filter(t => t > lNowHM.value) : lRawTimeSlots.value
+)
+// 選擇日期這一步是否可以按「下一步」：日期本身要可訂購、當天要真的有撈到至少一個時段、
+// 而且時段還在讀取中也先擋著（避免搶在 fetchTimeSlots 判斷出「這天其實沒有時段」之前就放行）
+const lDateStepValid = computed(() =>
+    !!lForm.date && lIsBookable(lForm.date) && !lTimeSlotsLoading.value && lRawTimeSlots.value.length > 0
+)
 const lDietOptions = [
   {key: 'meatQty', icon: '🍖', label: '葷食便當', desc: '含肉類料理'},
   {key: 'fullVegQty', icon: '🌿', label: '全素便當', desc: '不含蛋奶五辛'},
@@ -258,13 +337,19 @@ const lDayClass = (day) => {
 }
 
 // 未開放訂購的日期：點了立刻顯示提示，不要等到按下一步才知道，手機沒有滑鼠 hover，不能只靠 title 提示
-const lSelectDate = (date) => {
+const lSelectDate = async (date) => {
   lForm.date = date
   if (!lIsBookable(date)) {
     lErrors.date = lDayNote(date) || '該日期未開放訂購，請重新選擇'
     return
   }
   delete lErrors.date
+  await fetchTimeSlots(date)
+  // 日期本身有開放（公休/營業日檢查都過了），但這天實際上沒有設定任何取餐時間
+  // （例如只設了臨時時段給別的日子，這天沒有預設時段可用）：一樣視為不可訂購
+  if (lRawTimeSlots.value.length === 0) {
+    lErrors.date = '該日期尚未開放任何取餐時段，請洽詢門市或選擇其他日期'
+  }
 }
 
 const lSummary = computed(() => {
@@ -292,6 +377,10 @@ const lNextStep = () => {
     if (!lForm.phone.trim()) lErrors.phone = '請輸入聯絡電話'
     else if (!validateTWPhone(lForm.phone)) lErrors.phone = '請輸入正確的手機（09xxxxxxxx）或市話（如 02-12345678、07-1234567）'
     if (lForm.meatQty === 0 && lForm.fullVegQty === 0 && lForm.eggVegQty === 0 && lForm.spiceVegQty === 0) lErrors.qty = '請至少預訂一盒便當'
+    // 防呆：使用者可能在這頁停留很久，選的時間可能在填資料的期間變成過去式
+    if (lForm.date === lTodayStr && !lAvailableTimeSlots.value.includes(lForm.time)) {
+      lErrors.time = '所選時間已過，請重新選擇取餐時間'
+    }
     if (Object.keys(lErrors).length > 0) return
   }
   lStep.value++
@@ -311,7 +400,7 @@ const lSubmit = async () => {
     // 後端遇到不可訂購日期等情況會回傳 {"error": "…"}（HTTP 狀態仍是 200），需另外判斷
     if (data && data.error) { lSubmitError.value = data.error; return }
     Object.assign(lForm, {
-      name: '', phone: '', date: '', time: '12:00',
+      name: '', phone: '', date: '', time: '',
       meatQty: 0, fullVegQty: 0, eggVegQty: 0, spiceVegQty: 0, note: ''
     })
     lStep.value = 0
@@ -346,9 +435,38 @@ onMounted(async () => {
               : 'none'
     }
   }
-  fetchRestaurantHours()
   fetchNotice()
+  // 這三個都要 await：lSettings（公休/營業日）、有沒有設定過取餐時間、今天的原始時段，
+  // 都是「今天算不算可訂」「要不要自動跳下一個可訂日期」判斷的依據，缺一都可能誤判
+  await fetchRestaurantHours()
+  await fetchTimeSlotSettingsExist()
+  await fetchTodayRawSlots()
+
+  // 今天已經不可訂購（例如時段全部過去、或今天剛好公休）時，直接預設跳到下一個可訂日期，
+  // 不要讓使用者停在一個明顯不能選的日期上還要自己往後翻日曆
+  const initialDate = lIsBookable(lTodayStr) ? lTodayStr : (lFindNextBookableDate(lTodayStr) || lTodayStr)
+  if (initialDate !== lTodayStr) {
+    // 跳到下個月甚至更後面時，日曆也要跟著翻到那個月份
+    const [y, m] = initialDate.split('-')
+    lCalYear.value = Number(y)
+    lCalMonth.value = Number(m)
+  }
+  lSelectDate(initialDate)
+
+  // 每分鐘更新一次目前時刻，讓「今天已過去的時段」判斷不會因為使用者長時間停留而過期
+  lNowTimer = setInterval(() => {
+    lNowHM.value = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`
+  }, 60000)
 })
+
+onUnmounted(() => {
+  if (lNowTimer) clearInterval(lNowTimer)
+})
+
+// 選的時間若不在（新的）可選清單裡——包含「選了今天但時間後來過去了」——自動帶到第一個可選時段
+watch(lAvailableTimeSlots, (slots) => {
+  if (!slots.includes(lForm.time)) lForm.time = slots[0] || ''
+}, { immediate: true })
 
 // 訪客在此頁登入成功後，隱藏登入畫面、改顯示訂購表單
 watch(isLoggedIn, (loggedIn) => {
@@ -477,8 +595,9 @@ watch(isLoggedIn, (loggedIn) => {
                     <div class="lunch-field">
                       <label class="lunch-label">取餐時間</label>
                       <select v-model="lForm.time" class="lunch-input">
-                        <option v-for="t in lTimeSlots" :key="t" :value="t">{{ t }}</option>
+                        <option v-for="t in lAvailableTimeSlots" :key="t" :value="t">{{ t }}</option>
                       </select>
+                      <p v-if="lErrors.time" class="lunch-error">{{ lErrors.time }}</p>
                     </div>
                     <div v-for="opt in lDietOptions" :key="opt.key" class="lunch-diet-row">
                       <div class="lunch-diet-row__info">
@@ -526,7 +645,7 @@ watch(isLoggedIn, (loggedIn) => {
                       上一步
                     </button>
                     <div v-else/>
-                    <button v-if="lStep < lSteps.length - 1" @click="lNextStep" class="lunch-btn lunch-btn--next">
+                    <button v-if="lStep < lSteps.length - 1" :disabled="lStep === 0 && !lDateStepValid" @click="lNextStep" class="lunch-btn lunch-btn--next">
                       下一步
                       <svg class="lunch-btn__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
