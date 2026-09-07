@@ -11,6 +11,17 @@ const customerStore = useCustomerStore()
 const isLoggedIn = computed(() => customerStore.isLoggedIn)
 const inspectorName = computed(() => customerStore.customer?.name || '')
 
+// 這頁是全新開啟的網頁(掃 QR Code 進來)，Pinia store 是空的，不會自動知道
+// 使用者是不是已經登入過——要靠後端的 holy_customer cookie 主動查一次才知道
+// (跟 order/bento.vue 等其他公開頁的登入檢查邏輯一致)
+const CUSTOMER_BASE = computed(() => commonStore.data.main_url + '/holy/customer')
+async function fetchMe() {
+  try {
+    const data = await (await fetch(`${CUSTOMER_BASE.value}/me`, {credentials: 'include'})).json()
+    if (!data.error) customerStore.setCustomer(data)
+  } catch { /* 未登入或查詢失敗，維持訪客狀態 */ }
+}
+
 const route = useRoute()
 const extinguisherId = route.params.id // 網址與 QR Code 上編碼的是永久 id,不是編號,改編號不會讓舊 QR 失效
 
@@ -66,6 +77,7 @@ async function loadHistory() {
 onMounted(() => {
   loadExtinguisher();
   loadHistory()
+  if (!customerStore.customer) fetchMe()
 })
 
 const doneCount = computed(() => items.filter(i => state[i] !== null).length)
