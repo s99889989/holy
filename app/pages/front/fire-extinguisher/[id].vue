@@ -89,13 +89,53 @@ const gaugeColor = computed(() =>
 
 const photoFile = ref(null)
 const photoPreview = ref('')
+const compressing = ref(false)
 
-function onPhotoChange(e) {
+// 把照片縮到最長邊 1600px、轉成 WebP 再上傳——手機拍照原始檔常常好幾 MB，
+// 巡檢又常在戶外訊號不好的地方，壓縮過的檔案上傳快很多，後端存的空間也小很多。
+// 有些舊瀏覽器不支援編碼 WebP，toBlob 那邊會退回瀏覽器自己選的格式（通常是 PNG），
+// 這裡不強求一定要拿到 webp，拿得到什麼就用什麼，失敗了才整個退回原始檔案。
+async function compressToWebp(file, maxSize = 1600, quality = 0.8) {
+  const bitmap = await createImageBitmap(file)
+  try {
+    const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height))
+    const w = Math.round(bitmap.width * scale)
+    const h = Math.round(bitmap.height * scale)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h)
+
+    const blob = await new Promise((resolve, reject) =>
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob 失敗')), 'image/webp', quality)
+    )
+    const ext = blob.type === 'image/webp' ? '.webp' : (blob.type === 'image/png' ? '.png' : '.jpg')
+    const name = (file.name || 'photo').replace(/\.[^.]+$/, '') + ext
+    return new File([blob], name, {type: blob.type})
+  } finally {
+    bitmap.close?.()
+  }
+}
+
+async function onPhotoChange(e) {
   const file = e.target.files[0]
   if (!file) return
   if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
-  photoFile.value = file
-  photoPreview.value = URL.createObjectURL(file)
+
+  compressing.value = true
+  try {
+    const compressed = await compressToWebp(file)
+    photoFile.value = compressed
+    photoPreview.value = URL.createObjectURL(compressed)
+  } catch (err) {
+    console.error(err)
+    // 壓縮失敗(例如瀏覽器不支援 createImageBitmap)就直接用原始檔案，不要卡住使用者
+    photoFile.value = file
+    photoPreview.value = URL.createObjectURL(file)
+  } finally {
+    compressing.value = false
+  }
 }
 
 const failWithoutNote = computed(() =>
@@ -300,7 +340,11 @@ const statusColor = (status) => ({
           <div style="font-size:13px;color:#5B615D;margin:14px 0 8px;font-weight:500;">拍照佐證</div>
           <label
               style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:1px dashed #DADDD6;border-radius:12px;padding:26px;cursor:pointer;background:#fff;margin-bottom:22px;">
-            <template v-if="photoPreview">
+            <template v-if="compressing">
+              <span style="font-size:22px;">⏳</span>
+              <span style="font-size:13px;color:#5B615D;">處理照片中...</span>
+            </template>
+            <template v-else-if="photoPreview">
               <img :src="photoPreview" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px;">
             </template>
             <template v-else>
