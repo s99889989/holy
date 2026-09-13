@@ -10,7 +10,7 @@ useSiteHead({
   ogUrl: 'https://holymotherfarm.netlify.app/front/order/handmade-bread',
 })
 
-import {ref, reactive, computed, onMounted, nextTick} from 'vue'
+import {ref, reactive, computed, onMounted, onUnmounted, nextTick} from 'vue'
 import {useCommonStore} from '~/stores/common.js'
 import {useCustomerStore} from '~/stores/customer.js'
 
@@ -72,6 +72,19 @@ function thumbUrl(path) {
 
 const previewUrl = ref('')
 
+// ── Hero 圖片（用品項照片拼一排，不用額外準備素材）──────────────
+const heroImages = computed(() =>
+    items.value.filter(i => i.image).map(i => ({code: i.code, name: i.name, src: imgUrl(i.image)})).slice(0, 10)
+)
+
+// ── 代碼徽章配色（呼應海報的暖色系，依代碼字母固定分配、不會每次刷新亂跳）──
+const BADGE_PALETTE = ['#c97b3d', '#a3572f', '#8c6a3a', '#b8843f', '#9c5a3c', '#c99a4a']
+
+function badgeStyle(code) {
+  const idx = (code?.charCodeAt(0) || 65) % BADGE_PALETTE.length
+  return {background: BADGE_PALETTE[idx]}
+}
+
 // ── 日期工具 ────────────────────────────────────────────────────
 function getNext(dow, offsetWeeks = 0) {
   const now = new Date()
@@ -92,9 +105,42 @@ function toDateStr(d) {
 }
 
 const MAX_WEEKS_SHOWN = 8
-const weeksShown = ref(3) // 預設一次顯示未來 3 週的取貨日
+const weeksShown = ref(1) // 先給預設值，實際會在畫面量測後自動調整成剛好一排
+const userExpandedWeeks = ref(false) // 使用者按過「顯示更多」後，就不再自動收合，只會繼續自動成長
+const dayTabsRef = ref(null)
+
+// 依實際容器寬度跟單一標籤寬度，算出一排放得下幾週（而不是寫死數字），
+// 這樣手機窄螢幕跟桌機寬螢幕都會剛好塞滿一排、不會多出半排。
+function computeFitWeeks() {
+  const container = dayTabsRef.value
+  if (!container) return null
+  const firstTab = container.querySelector('.hb-day-tab')
+  if (!firstTab) return null
+  const containerWidth = container.clientWidth
+  const tabWidth = firstTab.offsetWidth
+  const gap = 8 // 對應 .hb-day-tabs 的 CSS gap
+  if (!containerWidth || !tabWidth) return null
+  const perRow = Math.max(1, Math.floor((containerWidth + gap) / (tabWidth + gap)))
+  const perWeek = Math.max(1, businessDays.value.length)
+  return Math.max(1, Math.floor(perRow / perWeek))
+}
+
+function autoFitWeeks() {
+  if (userExpandedWeeks.value) return
+  const fit = computeFitWeeks()
+  if (fit) weeksShown.value = Math.min(MAX_WEEKS_SHOWN, fit)
+}
+
 function showMoreWeeks() {
+  userExpandedWeeks.value = true
   weeksShown.value = Math.min(MAX_WEEKS_SHOWN, weeksShown.value + 2)
+}
+
+let resizeTimer = null
+
+function onWindowResize() {
+  clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(autoFitWeeks, 150)
 }
 
 const pickupDayOptions = computed(() =>
@@ -500,8 +546,10 @@ function resetForm() {
   const firstKey = pickupDayOptions.value[0]?.dateKey
   selDates.value = firstKey ? [firstKey] : []
   if (firstKey) ensureDateQty(firstKey)
-  weeksShown.value = 3
+  weeksShown.value = 1
+  userExpandedWeeks.value = false
   successModal.value = false
+  nextTick(autoFitWeeks)
 }
 
 // ── 初始化 ──────────────────────────────────────────────────────
@@ -510,6 +558,9 @@ onMounted(async () => {
   await fetchItems()
   ensurePackageQty()
   await fetchBusinessDays()
+  await nextTick()
+  autoFitWeeks()
+  window.addEventListener('resize', onWindowResize)
   const firstKey = pickupDayOptions.value[0]?.dateKey
   if (firstKey) {
     selDates.value = [firstKey];
@@ -540,6 +591,11 @@ onMounted(async () => {
   } else if (window.google) {
     initGoogle()
   }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', onWindowResize)
+  clearTimeout(resizeTimer)
 })
 </script>
 
@@ -602,6 +658,16 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- Hero：用品項照片排成一排，讓人一進頁面就看到麵包本尊 -->
+    <div v-if="heroImages.length" class="hb-hero">
+      <div class="hb-hero__scroll">
+        <div v-for="img in heroImages" :key="img.code" class="hb-hero__item">
+          <img :src="img.src" class="hb-hero__img" :alt="img.name"/>
+          <span class="hb-hero__badge" :style="badgeStyle(img.code)">{{ img.code }}</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Body -->
     <div class="hb-wrap">
 
@@ -615,7 +681,7 @@ onMounted(async () => {
       </div>
 
       <p class="hb-day-tabs__hint">可勾選多個取貨日，分開設定各自的麵包數量</p>
-      <div class="hb-day-tabs">
+      <div class="hb-day-tabs" ref="dayTabsRef">
         <button v-for="opt in pickupDayOptions" :key="opt.dateKey"
                 class="hb-day-tab"
                 :class="{ active: selDates.includes(opt.dateKey), closed: closedMap[opt.dateKey] }"
@@ -648,8 +714,9 @@ onMounted(async () => {
               <img :src="thumbUrl(item.image)" class="hb-order-row__img" alt="">
             </div>
             <div v-else class="hb-order-row__img hb-order-row__img--placeholder">🍞</div>
+            <span class="hb-order-row__badge" :style="badgeStyle(item.code)">{{ item.code }}</span>
             <div class="hb-order-row__label">
-              {{ item.code }}．{{ item.name }}
+              {{ item.name }}
               <span class="hb-order-row__sub">${{ item.price }}／{{ item.unit }}</span>
             </div>
             <div class="hb-qty-ctrl">
@@ -742,8 +809,9 @@ onMounted(async () => {
               <img :src="thumbUrl(item.image)" class="hb-order-row__img" alt="">
             </div>
             <div v-else class="hb-order-row__img hb-order-row__img--placeholder">🍞</div>
+            <span class="hb-order-row__badge" :style="badgeStyle(item.code)">{{ item.code }}</span>
             <div class="hb-order-row__label">
-              {{ item.code }}．{{ item.name }}
+              {{ item.name }}
               <span class="hb-order-row__sub">${{ item.price }}／{{ item.unit }}</span>
             </div>
             <div class="hb-qty-ctrl">
@@ -1385,6 +1453,59 @@ onMounted(async () => {
   background: #fdf4ea;
 }
 
+/* ── Hero：品項照片橫向排列 ── */
+.hb-hero {
+  background: linear-gradient(180deg, #4a2c1a 0%, #f7f4ef 100%);
+  padding: 0.75rem 0 1rem;
+}
+
+.hb-hero__scroll {
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  gap: 10px;
+  padding: 2px 1rem 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.hb-hero__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.hb-hero__item {
+  position: relative;
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+}
+
+.hb-hero__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+  display: block;
+  border: 2px solid #fff;
+  box-shadow: 0 4px 14px rgba(74, 44, 26, 0.25);
+}
+
+.hb-hero__badge {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+}
+
 /* ── Order Rows / Item List ── */
 .hb-order-rows, .hb-item-list {
   display: flex;
@@ -1401,18 +1522,19 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: #fbf5eb;
-  border-radius: 8px;
+  background: #fbead9;
+  border-radius: 10px;
 }
 
 .hb-order-row__img-wrap {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
+  width: 48px;
+  height: 48px;
+  border-radius: 9px;
   overflow: hidden;
   flex-shrink: 0;
   cursor: zoom-in;
   background: #f1e6d3;
+  box-shadow: 0 2px 6px rgba(74, 44, 26, 0.15);
 }
 
 .hb-order-row__img {
@@ -1423,15 +1545,28 @@ onMounted(async () => {
 }
 
 .hb-order-row__img--placeholder {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
+  width: 48px;
+  height: 48px;
+  border-radius: 9px;
   flex-shrink: 0;
   background: #f1e6d3;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 22px;
+}
+
+.hb-order-row__badge {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .hb-order-row__label {
@@ -1484,6 +1619,19 @@ onMounted(async () => {
   background: #fff;
   color: #2a2e25;
   font-family: inherit;
+}
+
+/* 桌機瀏覽器會幫 type=number 加上原生上下箭頭，把數字往左擠，
+   跟旁邊自訂的 −/+ 按鈕重複又搶位置，所以關掉原生箭頭。 */
+.hb-qty-ctrl input::-webkit-outer-spin-button,
+.hb-qty-ctrl input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.hb-qty-ctrl input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 /* ── Summary ── */
@@ -1732,7 +1880,9 @@ onMounted(async () => {
 }
 
 /* ── 極窄螢幕（舊款小手機、瀏覽器 App 內嵌視窗）額外收緊 header ── */
-@media (max-width: 360px) {
+/* 窄螢幕：副標題（品牌敘述）先讓位給標題跟頭像，避免三者擠在同一行
+   互相覆蓋——副標題本來就是次要資訊，隱藏掉不影響操作。 */
+@media (max-width: 420px) {
   .hb-header {
     padding: 1rem 1rem;
   }
@@ -1750,12 +1900,88 @@ onMounted(async () => {
   }
 
   .hb-header__sub {
-    font-size: 11px;
+    display: none;
   }
 
   .hb-login-btn {
     padding: 5px 10px;
     font-size: 11.5px;
+  }
+
+  .hb-avatar-btn {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* ── 桌機／寬螢幕優化（≥900px）──────────────────────────────────
+   手機版是單欄窄版面，直接拿到寬螢幕上會兩側留一大片空白、
+   品項一條一條排很長。這裡把容器加寬、品項改雙欄並排、
+   hero 照片放大一點，讓寬螢幕也有合理的版面密度。 */
+@media (min-width: 900px) {
+  .hb-header__inner,
+  .hb-wrap {
+    max-width: 760px;
+  }
+
+  /* 桌機用滑鼠沒辦法像手機觸控那樣滑動捲軸，乾脆改成自動換行全部顯示，
+     不用再靠拖曳捲動——寬度也夠放好幾張。 */
+  .hb-hero__scroll {
+    max-width: 900px;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    row-gap: 14px;
+  }
+
+  .hb-hero__item {
+    width: 92px;
+    height: 92px;
+  }
+
+  .hb-card {
+    padding: 1.4rem 1.75rem;
+  }
+
+  .hb-order-rows,
+  .hb-item-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  /* 訂購人卡片改用 grid：標題整排、姓名／聯絡方式並排、備註獨立整排 */
+  .hb-card:not(.hb-card--day) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 16px;
+  }
+
+  .hb-card:not(.hb-card--day) .hb-card__title,
+  .hb-card:not(.hb-card--day) .hb-field:nth-of-type(4) {
+    grid-column: 1 / -1;
+  }
+
+  /* 摘要卡片跟送出按鈕維持較窄寬度，太寬反而不好閱讀掃視 */
+  .hb-summary,
+  .hb-submit {
+    max-width: 420px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* ── 更寬的螢幕（≥1280px）：再往外撐一點，品項改三欄，
+   避免兩側留白比內容本身還大片 ── */
+@media (min-width: 1280px) {
+  .hb-header__inner,
+  .hb-hero__scroll,
+  .hb-wrap {
+    max-width: 1040px;
+  }
+
+  .hb-order-rows,
+  .hb-item-list {
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 </style>
