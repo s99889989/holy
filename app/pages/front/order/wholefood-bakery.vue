@@ -5,9 +5,9 @@
     description: '台東聖母農莊全食物烘焙坊，真食材・無添加・安心美味。全粒麥麵粉、在地蔬果、頂級紐西蘭奶油，每週二、三、四供應，歡迎線上預訂。',
     ogTitle: '全食物烘焙坊預購 | 台東聖母健康農莊',
     ogDescription: '台東聖母農莊全食物烘焙坊，真食材・無添加・安心美味。每週二、三、四供應，歡迎線上預訂。',
-    ogImage: 'https://holymotherfarm.netlify.app/images/order/wholefood-bakery_og.jpg',
-    twitterImage: 'https://holymotherfarm.netlify.app/images/order/wholefood-bakery_og.jpg',
-    ogUrl: 'https://holymotherfarm.netlify.app/front/order/wholefood-bakery',
+    ogImage: 'https://holyfarm.netlify.app/images/order/wholefood-bakery_og.jpg',
+    twitterImage: 'https://holyfarm.netlify.app/images/order/wholefood-bakery_og.jpg',
+    ogUrl: 'https://holyfarm.netlify.app/front/order/wholefood-bakery',
   })
 
   import {ref, reactive, computed, onMounted, onUnmounted, nextTick} from 'vue'
